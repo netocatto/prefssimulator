@@ -21,6 +21,11 @@ A fonte dos textos (Nunito) vem junto, na pasta `fonts`, e funciona sem internet
 
 ## O que já existe
 
+- **Negociação mais justa:** as empresas aceitam contrapartidas com mais facilidade. Cada contrapartida mostra se é leve, média ou pesada para aquela empresa: uma creche pesa para uma academia, mas pouco para uma montadora.
+  - O interesse das empresas pela cidade aparece na mesa e sobe com a população, a mão de obra disponível, a aprovação do prefeito e as empresas que já vieram.
+  - Dificuldade: no Fácil as empresas cedem mais, têm mais paciência e cidades rivais aparecem menos; no Difícil cobram quase tudo o que pedem e disputam mais com as rivais.
+  - Quanto maior a cidade, mais propostas chegam.
+- **Recolher painéis:** o botão – / + no canto da placa da cidade e do relógio recolhe e expande cada um. Recolhidos, mostram só o essencial (cidade e aprovação; data, hora, pausa/play e caixa). Em telas pequenas já começam recolhidos, e a escolha fica salva.
 - **v0.8, negociação flexível com empresas:**
   - Cada pedido é negociado em partes: IPTU com desconto de 25%, 50%, 80% ou isenção, e prazo de 1 a 10 anos; ISS com alíquota de 4%, 3%, 2,5% ou 2%, e prazo; terreno público pelo preço cheio, com 25%, 50% ou 75% de desconto, ou doado; obras de acesso de 25% a 125% do valor pedido; ITBI com 50% de desconto ou isento.
   - Prioridades: cada empresa mostra o que é Essencial, Importante ou Desejável para ela. Ceder no que é essencial vale mais; o que passa do pedido vale só metade.

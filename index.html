@@ -16,6 +16,7 @@
 <div id="hud" hidden>
   <!-- placa da cidade (canto superior esquerdo) -->
   <div class="placa moldura">
+    <button class="recolher" data-recolher="placa" aria-label="Recolher informações da cidade" title="Recolher / expandir">–</button>
     <div class="placa-nome"><span id="h-cidade"></span><small id="h-mandato"></small></div>
     <div class="placa-aprov" id="h-aprov"></div>
     <div class="placa-linha">
@@ -27,6 +28,7 @@
 
   <!-- relógio, velocidade e caixa (canto superior direito) -->
   <div class="relogio moldura">
+    <button class="recolher" data-recolher="relogio" aria-label="Recolher relógio" title="Recolher / expandir">–</button>
     <div class="rel-data"><span id="h-data"></span>
       <div class="rel-hora"><span id="h-hora"></span><div class="dia"><i id="h-diaBar"></i></div><button class="btn" id="dormir" title="Dormir: encerra o dia e acorda às 6h do dia seguinte (Z)">☾ Dormir</button></div></div>
     <div class="rel-vel tempo">

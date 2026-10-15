@@ -139,14 +139,14 @@ const CATALOGO_EMPRESAS = [
 
 // O que a prefeitura pode exigir (custo = esforço para a empresa)
 const CONTRAPARTIDAS = {
-  maoDeObra: { nome: 'Contratar 80% de moradores da cidade', custo: 9,  prazo: 0,  desc: 'Mais empregos ficam com quem mora aqui.' },
-  cursos:    { nome: 'Cursos profissionalizantes gratuitos', custo: 7,  prazo: 3,  desc: 'Qualifica jovens e desempregados.' },
-  creche:    { nome: 'Construir uma creche para a comunidade', custo: 12, prazo: 8,  desc: '+150 vagas de creche no bairro.' },
-  ubs:       { nome: 'Construir e doar um posto de saúde', custo: 15, prazo: 10, desc: 'Atende 5 mil pessoas no bairro.' },
-  escola:    { nome: 'Reformar e ampliar escolas do bairro', custo: 9,  prazo: 6,  desc: '+250 vagas escolares no bairro.' },
-  praca:     { nome: 'Reformar a praça e a quadra do bairro', custo: 5,  prazo: 4,  desc: 'Lazer para 3 mil moradores.' },
-  cultura:   { nome: 'Patrocinar os eventos culturais da cidade', custo: 6, prazo: 0, desc: 'Shows e festas com a marca da empresa.' },
-  ambiental: { nome: 'Filtros e compensação ambiental', custo: 10, prazo: 0, desc: 'Reduz bastante a poluição.', soPoluente: true },
+  maoDeObra: { nome: 'Contratar 80% de moradores da cidade', custo: 6,  prazo: 0,  desc: 'Mais empregos ficam com quem mora aqui.' },
+  cursos:    { nome: 'Cursos profissionalizantes gratuitos', custo: 5,  prazo: 3,  desc: 'Qualifica jovens e desempregados.' },
+  creche:    { nome: 'Construir uma creche para a comunidade', custo: 10, prazo: 8,  desc: '+150 vagas de creche no bairro.' },
+  ubs:       { nome: 'Construir e doar um posto de saúde', custo: 13, prazo: 10, desc: 'Atende 5 mil pessoas no bairro.' },
+  escola:    { nome: 'Reformar e ampliar escolas do bairro', custo: 8,  prazo: 6,  desc: '+250 vagas escolares no bairro.' },
+  praca:     { nome: 'Reformar a praça e a quadra do bairro', custo: 4,  prazo: 4,  desc: 'Lazer para 3 mil moradores.' },
+  cultura:   { nome: 'Patrocinar os eventos culturais da cidade', custo: 4, prazo: 0, desc: 'Shows e festas com a marca da empresa.' },
+  ambiental: { nome: 'Filtros e compensação ambiental', custo: 8, prazo: 0, desc: 'Reduz bastante a poluição.', soPoluente: true },
 };
 
 // O que a empresa pode pedir. Cada item é negociável em partes:
@@ -206,6 +206,30 @@ const Empresas = (() => {
     return CATALOGO_EMPRESAS.filter(c => c.minPop > pop).sort((a, b) => a.minPop - b.minPop);
   }
   function multCusto(empregos) { return 1.3 - Math.min(1, empregos / 1000) * 0.7; }
+  // quanto uma contrapartida pesa para esta empresa: obra de creche pesa muito para uma lojinha
+  // e pouco para uma montadora
+  function fatorPorte(c) { return clamp(1.6 - Math.log10(Math.max(0.3, c.invest / 1e6)) * 0.45, 0.45, 1.5); }
+  function custoContrapartida(c, id) { return CONTRAPARTIDAS[id].custo * fatorPorte(c); }
+  // ajustes por dificuldade
+  const DIF_NEG = {
+    facil:   { base: 12, exige: 0.62, rival: 0.2,  paciencia: 4, freq: 1.3 },
+    medio:   { base: 6,  exige: 0.72, rival: 0.35, paciencia: 3, freq: 1 },
+    dificil: { base: 0,  exige: 0.84, rival: 0.5,  paciencia: 3, freq: 0.8 },
+  };
+  const difNeg = () => DIF_NEG[S().dificuldade] || DIF_NEG.medio;
+  // atratividade da cidade: quanto as empresas topam ceder para vir para cá
+  function atratividade() {
+    const s = S(), pop = Sim.popTotal(), d = difNeg();
+    const partes = [];
+    partes.push(['Dificuldade', d.base]);
+    partes.push(['Tamanho da cidade', clamp((pop - 25000) / 2500, -4, 20)]);
+    partes.push(['Mão de obra disponível', clamp((s.desemprego - 7) * 0.8, -3, 5)]);
+    partes.push(['Aprovação do prefeito', clamp((Sim.aprovCidade() - 50) / 8, -4, 4)]);
+    const emp = (s.empresas || []).filter(e => e.status === 'operando').length;
+    partes.push(['Empresas que já vieram', Math.min(6, emp * 0.6)]);
+    const total = partes.reduce((a, b) => a + b[1], 0);
+    return { total, partes: partes.map(([n, v]) => ({ nome: n, valor: Math.round(v * 10) / 10 })) };
+  }
 
   // ------------------------------------------------------------ propostas
   function gerarProposta(forcarId) {
@@ -219,12 +243,12 @@ const Empresas = (() => {
     let lote = null;
     if (lotes.length) lote = (c.pede.doacaoTerreno ? lotes.find(l => l.tipo === 'publico') : null) || lotes[0];
     const pedidos = montarPedidos(c);
-    const rivalCidade = Math.random() < 0.35 ? s.rivais[Math.floor(Math.random() * s.rivais.length)] : null;
+    const rivalCidade = Math.random() < difNeg().rival ? s.rivais[Math.floor(Math.random() * s.rivais.length)] : null;
     const p = {
       id: 'p' + (uid++), catId: c.id, nome: c.nome, setor: c.setor, empregos: c.empregos,
       pedidos, exigidas: [], loteId: lote ? lote.id : null,
       bairro: c.local === 'pequeno' ? escolherBairroPequeno() : null,
-      interesse: 50, paciencia: 3, ruido: Math.round(rnd(-3, 3)),
+      interesse: 50, paciencia: difNeg().paciencia, pacMax: difNeg().paciencia, ruido: Math.round(rnd(-3, 3)),
       rival: rivalCidade ? { id: rivalCidade.id, nome: rivalCidade.nome } : null,
       chegou: s.mesIndex, expira: s.mesIndex + (rivalCidade ? 2 : 3),
       falas: [{ quem: 'empresa', txt: abertura(c, rivalCidade, pedidos) }], sondagens: 2,
@@ -340,10 +364,10 @@ const Empresas = (() => {
       total += ptsBruto(ped.tipo, ped.pedido) * (ped.peso || 1);
       dado += ptsItem(ped);
     }
-    const mult = multCusto(c.empregos);
-    const custo = p.exigidas.reduce((s, id) => s + CONTRAPARTIDAS[id].custo * mult, 0);
-    const exigencia = p.interesse + total * 0.6 - 4 + (p.rival ? 8 : 0);
-    const score = p.interesse + dado - custo;
+    const custo = p.exigidas.reduce((s, id) => s + custoContrapartida(c, id), 0);
+    const atr = atratividade().total;
+    const exigencia = total * difNeg().exige + (p.rival ? 6 : 0);
+    const score = dado - custo + atr + (p.interesse - 50) * 0.5;
     const margem = score - exigencia;
     const visto = margem + p.ruido;
     let termo;
@@ -458,12 +482,11 @@ const Empresas = (() => {
       fechar(p);
       return 'aceita';
     }
-    p.interesse -= 2;
+    p.interesse -= 1;
     if (av.margem >= -12 && p.paciencia > 1) {
       p.paciencia--;
       // contraproposta: tira a contrapartida mais cara, ou insiste num pedido
       if (p.exigidas.length) {
-        const mult = multCusto(c.empregos);
         const cara = p.exigidas.slice().sort((a, b) => CONTRAPARTIDAS[b].custo - CONTRAPARTIDAS[a].custo)[0];
         p.exigidas = p.exigidas.filter(x => x !== cara);
         p.falas.push({ quem: 'empresa', txt: `Não conseguimos assumir "${CONTRAPARTIDAS[cara].nome.toLowerCase()}". Tirando isso, podemos conversar.` });
@@ -741,7 +764,7 @@ const Empresas = (() => {
     const s = S(); garantirEstado();
     // a primeira proposta do jogo chega logo nos primeiros dias
     const primeira = !s.empresas.length && !s.empresasUsadas.length && !s.propostas.length && s.mesIndex === 0 && s.dia >= 4;
-    if (primeira || (s.mesIndex >= s.proxProposta && s.propostas.length < 3 && Math.random() < 1 / 10)) {
+    if (primeira || (s.mesIndex >= s.proxProposta && s.propostas.length < 3 && Math.random() < Math.min(0.3, 0.1 * difNeg().freq * (1 + Math.max(0, Sim.popTotal() - 25000) / 40000)))) {
       if (gerarProposta()) s.proxProposta = s.mesIndex + (Math.random() < 0.6 ? 0 : 1);
     }
     if (s.prospeccaoDia && s.prospeccaoDia <= s.mesIndex * 31 + s.dia && s.propostas.length < 4) {
@@ -884,7 +907,7 @@ const Empresas = (() => {
 
   return {
     cat, garantirEstado, disponiveis, futuras, lotesCompativeis, gerarProposta, avaliar, proporRodada, recusar, desistir,
-    pedidoAplica, ptsPedido, ptsBruto, descPedido, preverCamara, valorDado, loteDe, atendido, opcoesDe, sondar, oferecerExtra, removerExtra, migrarProposta, fatorIPTU, aliquotaISS, taxaIPTU, PRIORIDADES, multCusto, votarPauta, mes, decidirCobranca,
+    pedidoAplica, ptsPedido, ptsBruto, descPedido, preverCamara, valorDado, loteDe, atendido, opcoesDe, sondar, oferecerExtra, removerExtra, migrarProposta, fatorIPTU, aliquotaISS, taxaIPTU, PRIORIDADES, multCusto, fatorPorte, custoContrapartida, atratividade, votarPauta, mes, decidirCobranca,
     dia, prospectar, podeProspectar, CUSTO_PROSPECCAO, opiniao, escolherBairroPequeno,
     receitaMensal, reducaoDesemprego, poluicaoBairro, efeitos, coberturaExtra, turismoTotal, migracao, ativas, isento,
   };

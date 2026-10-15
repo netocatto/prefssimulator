@@ -103,7 +103,29 @@ const UI = (() => {
   function posicionarPainel() {
     const r = document.querySelector('.relogio').getBoundingClientRect();
     if (window.innerWidth > 820) $('#painel').style.top = Math.round(r.bottom + 6) + 'px';
-    else $('#painel').style.top = '';
+    else $('#painel').style.top = Math.round(Math.max(r.bottom, document.querySelector('.placa').getBoundingClientRect().bottom) + 6) + 'px';
+  }
+  // recolher/expandir a placa da cidade e o relógio (bom para celular pequeno)
+  function ligarRecolher() {
+    let pref = null;
+    try { pref = JSON.parse(localStorage.getItem('prefeito_hud_recolhido') || 'null'); } catch (e) {}
+    if (!pref) { const peq = window.innerWidth < 820 || window.innerHeight < 520; pref = { placa: peq, relogio: peq }; }
+    const aplicar = () => {
+      for (const k of ['placa', 'relogio']) {
+        const el = document.querySelector('.' + k), b = el.querySelector('.recolher');
+        el.classList.toggle('recolhido', !!pref[k]);
+        b.textContent = pref[k] ? '+' : '–';
+        b.setAttribute('aria-expanded', String(!pref[k]));
+      }
+      posicionarPainel();
+    };
+    document.querySelectorAll('[data-recolher]').forEach(b => b.addEventListener('click', e => {
+      e.stopPropagation();
+      pref[b.dataset.recolher] = !pref[b.dataset.recolher];
+      try { localStorage.setItem('prefeito_hud_recolhido', JSON.stringify(pref)); } catch (er) {}
+      aplicar();
+    }));
+    aplicar();
   }
   function fechar() {
     painel = null; $('#painel').hidden = true;
@@ -838,7 +860,8 @@ const UI = (() => {
       const extras = tiposExtra.length ? `<div class="extras"><small>Oferecer também (a empresa não pediu, vale menos para ela):</small><div class="ops">${tiposExtra.map(t => `<button class="op" data-extra="${t}">+ ${PEDIDOS_EMPRESA[t].nome}</button>`).join('')}</div></div>` : '';
       const prios = p.pedidos.filter(x => !x.extra).slice().sort((a, b) => b.peso - a.peso).map(x => `<span class="pri pri-${x.peso >= 1.5 ? 'ess' : x.peso >= 1 ? 'imp' : 'des'}">${PEDIDOS_EMPRESA[x.tipo].curto}: ${Empresas.PRIORIDADES[x.peso]}</span>`).join('');
       const cps = Object.entries(CONTRAPARTIDAS).filter(([id, cp]) => !cp.soPoluente || c.poluicao).map(([id, cp]) =>
-        `<button class="cp ${p.exigidas.includes(id) ? 'sel' : ''}" data-cp="${id}" aria-pressed="${p.exigidas.includes(id)}"><b>${cp.nome}</b><small>${cp.desc}</small></button>`).join('');
+        { const k = Empresas.custoContrapartida(c, id), pz = k < 5 ? ['leve', 'Leve para eles'] : k < 10 ? ['medio', 'Peso médio'] : ['pesado', 'Pesado para eles'];
+          return `<button class="cp ${p.exigidas.includes(id) ? 'sel' : ''}" data-cp="${id}" aria-pressed="${p.exigidas.includes(id)}"><b>${cp.nome}</b><small>${cp.desc}</small><span class="peso-cp ${pz[0]}">${pz[1]}</span></button>`; }).join('');
       const lotes = Empresas.lotesCompativeis(c.local).concat(l && !Empresas.lotesCompativeis(c.local).includes(l) ? [l] : []);
       const selLote = c.local === 'rural' ? '<p class="nota">Vai se instalar na zona rural, fora do perímetro urbano.</p>' :
         c.local === 'pequeno' ? `<p class="nota">Vai alugar um ponto comercial no bairro ${Sim.bairroById(p.bairro).nome}. Não precisa de lote.</p>` :
@@ -849,7 +872,9 @@ const UI = (() => {
       return `<div class="mesa">
         <header class="mesa-top"><span class="logo-emp grande" style="background:${c.cor}">${c.nome[0]}</span>
           <div><small class="eyebrow">${SETORES[c.setor]} · mesa de negociação</small><h2>${esc(c.nome)}</h2><p class="nota">${esc(c.desc)}</p></div></header>
-        <div class="mesa-nums"><span>Investimento <b>${D(c.invest)}</b></span><span>Empregos <b>${num(c.empregos)}</b></span><span>Obra <b>${c.meses} meses</b></span><span>Paciência <b>${'■'.repeat(Math.max(0, p.paciencia))}${'□'.repeat(Math.max(0, 3 - p.paciencia))}</b></span></div>
+        <div class="mesa-nums"><span>Investimento <b>${D(c.invest)}</b></span><span>Empregos <b>${num(c.empregos)}</b></span><span>Obra <b>${c.meses} meses</b></span><span>Paciência <b>${'■'.repeat(Math.max(0, p.paciencia))}${'□'.repeat(Math.max(0, (p.pacMax || 3) - p.paciencia))}</b></span></div>
+        ${(() => { const a = Empresas.atratividade(); const n = a.total >= 18 ? ['ok', 'muito alto'] : a.total >= 10 ? ['ok', 'alto'] : a.total >= 4 ? ['and', 'médio'] : ['ruim', 'baixo'];
+          return `<div class="atrativ"><span>Interesse das empresas pela cidade: <b class="pill ${n[0]}">${n[1]}</b></span><small>${a.partes.filter(x => x.valor).map(x => `${x.nome} ${x.valor > 0 ? '+' : ''}${String(x.valor).replace('.', ',')}`).join(' · ')}</small></div>`; })()}
         ${p.rival ? `<p class="alerta">${p.rival.nome} está oferecendo condições melhores. A empresa vai pedir mais.</p>` : ''}
         <div class="falas">${falas}</div>
         <div class="mesa-cols">
@@ -1140,6 +1165,7 @@ const UI = (() => {
       Sim.pularMes(); atualizarHUD(); renderPainelSeVivo();
     });
     $('#dormir').addEventListener('click', dormir);
+    ligarRecolher();
     $('#ir-menu').addEventListener('click', () => { Sim.salvar(); location.reload(); });
     document.addEventListener('keydown', e => {
       if (e.target.tagName === 'INPUT' || !Sim.S || !$('#inicio').hidden) return;

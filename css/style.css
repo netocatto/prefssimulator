@@ -509,3 +509,36 @@ details.opcao:hover { border-color: var(--madeira-c); }
 .extras { margin: 6px 0; }
 .extras small { color: var(--texto-2); }
 .sugestao { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; background: #fff1c9; border: 2px solid var(--ouro); border-radius: 4px; flex-wrap: wrap; }
+
+/* recolher placa e relógio */
+.placa, .relogio { position: absolute; }
+.recolher { position: absolute; top: 2px; right: 2px; z-index: 2; width: 26px; height: 22px; padding: 0; line-height: 1;
+  font: 700 16px var(--f); color: var(--texto); background: var(--perg-c); border: 2px solid var(--perg-x); border-radius: 3px; cursor: pointer; }
+.recolher:hover { background: #fff1c9; }
+.placa .placa-nome { padding-right: 28px; }
+.relogio .rel-data { padding: 0 28px; }
+.placa.recolhido { width: auto; max-width: 46vw; gap: 2px; }
+.placa.recolhido #h-mandato, .placa.recolhido .placa-linha, .placa.recolhido .placa-aprov .barra { display: none; }
+.placa.recolhido #h-cidade { font-size: 17px; }
+.placa.recolhido .placa-aprov { grid-template-columns: auto auto; gap: 6px; }
+.placa.recolhido .placa-aprov span { font-size: 15px; }
+.relogio.recolhido { width: auto; gap: 4px; }
+.relogio.recolhido .rel-som, .relogio.recolhido .dia, .relogio.recolhido #dormir, .relogio.recolhido #pular,
+.relogio.recolhido [data-vel="2"], .relogio.recolhido [data-vel="5"], .relogio.recolhido .rel-caixa em, .relogio.recolhido .rel-caixa small { display: none; }
+.relogio.recolhido #h-data { font-size: 14px; }
+.relogio.recolhido .rel-hora { justify-content: center; }
+.relogio.recolhido #h-hora { font-size: 15px; min-width: 0; }
+.relogio.recolhido .rel-vel button { padding: 3px 10px; }
+.relogio.recolhido .rel-caixa { padding: 3px 8px; justify-content: center; }
+.relogio.recolhido .rel-caixa span { font-size: 15px; }
+.relogio.recolhido { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; max-width: 280px; }
+.relogio.recolhido .rel-data { display: flex; align-items: center; gap: 8px; width: 100%; padding: 0 28px 0 2px; }
+.relogio.recolhido #h-data { font-size: 13px; text-align: left; }
+.relogio.recolhido .rel-hora { flex: none; }
+.relogio.recolhido .rel-vel { flex: none; }
+.relogio.recolhido .rel-caixa { flex: 1; }
+
+.atrativ { display: grid; gap: 2px; font-size: 14px; }
+.atrativ small { color: var(--texto-2); font-size: 12px; }
+.peso-cp { justify-self: start; font-size: 11px; font-weight: 700; padding: 0 6px; border-radius: 8px; margin-top: 2px; }
+.peso-cp.leve { background: #d6efc2; color: #2c5a17; } .peso-cp.medio { background: #f7e2a6; color: #6a4a08; } .peso-cp.pesado { background: #f6c7bb; color: #7a2412; }

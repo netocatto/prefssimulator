@@ -1,4 +1,4 @@
-# Prefeito — versão 0.8
+# Prefeito — versão 0.10
 
 Jogo de gestão pública em pixel art no estilo "fazendinha" (alta resolução). Você é prefeito de uma cidade de 25 mil habitantes no interior paulista e precisa se reeleger a cada 2 anos.
 
@@ -12,8 +12,8 @@ A fonte dos textos (Nunito) vem junto, na pasta `fonts`, e funciona sem internet
 
 - **Arrastar** o mapa para andar; **roda do mouse** ou **pinça** para zoom; **WASD/setas** também movem.
 - **Clique num lote** para construir; clique num bairro para ver seus números.
-- **Balões** sobre as casas são moradores falando com a prefeitura. Clique neles.
-- A **barra de ícones** embaixo abre os painéis (passe o mouse para ver o nome). Teclas **1 a 9**, **0** e **R** também; **espaço** pausa.
+- **Alertas vermelhos** no mapa são problemas na rua; **$** marca onde uma empresa quer se instalar. Clique neles.
+- A **barra de ícones** embaixo abre os painéis (passe o mouse para ver o nome). Teclas **1 a 9**, **0**, **R** (Recursos), **E** (Eventos) e **V** (Avisos) também; **espaço** pausa.
 - **M** liga/desliga a música e **N** os efeitos sonoros (também pelos botões ♫ e ♪ no relógio).
 - Velocidade: pausa, 1x, 2x, 5x e **Próximo mês**. A duração de 1 dia depende do ritmo escolhido.
 - **☾ Dormir** (ou tecla **Z**) encerra o dia e acorda às 6h do dia seguinte.
@@ -21,6 +21,28 @@ A fonte dos textos (Nunito) vem junto, na pasta `fonts`, e funciona sem internet
 
 ## O que já existe
 
+- **Novo na v0.10, Praça Central:** um quarteirão inteiro no Centro, entre a igreja (agora de frente para a praça) e a prefeitura.
+  - Chafariz com água jorrando, coreto, ipês, canteiros com flores, bancos com gente sentada, banca de jornal, pipoqueiro, pombos ciscando (voam quando a praça lota), postes acesos à noite e gente passeando.
+  - Todos os eventos acontecem aqui:
+    - Show local: banda tocando no coreto e público dançando.
+    - Quermesse: bandeirinhas balançando, fogueira com faíscas, barracas e quadrilha girando em roda.
+    - Feira: barracas espalhadas e gente circulando.
+    - Shows grandes: palco gigante, canhões de luz à noite, confete e fogos.
+  - O prefeito aparece nos eventos.
+  - **Protestos:** quando um grupo fica muito insatisfeito, ele ocupa a praça com cartazes, faixa ("SAÚDE JÁ", "EMPREGO JÁ"...), carro de som e gritos de guerra. Clique na praça para responder:
+    - receber uma comissão (seguro);
+    - descer e discursar (aplauso ou vaia, conforme a sua aprovação);
+    - mandar a Guarda dispersar (a Guarda chega em fila e o povo corre; custa caro na aprovação).
+    - Ignorar deixa o grupo mais irritado.
+- **Novo na v0.9:**
+  - **Interface proporcional:** placa, relógio, painéis, janelas e barra de ícones crescem e encolhem juntos conforme o tamanho da tela. O painel lateral fica entre o relógio e a barra, sem ficar escondido atrás dela.
+  - **Sem notificações na tela:** tudo vai para o painel **Avisos** (sino na barra, tecla **V**), com contador de não lidos e botão "Ver no mapa".
+  - **Munícipes:** as falas aparecem sozinhas sobre as casas e somem. A Ouvidoria responde por você; o painel mostra só o resumo.
+  - **Ocorrências na cidade:** buraco, vazamento, lixo acumulado, árvore caída, incêndio, acidente e alagamento (no verão chuvoso) aparecem no mapa com um alerta vermelho. Clique para resolver (custa pouco); se ninguém resolver no prazo, o bairro fica irritado. Contrato de tapa-buraco e de coleta de lixo e Posto de Bombeiros resolvem sozinhos.
+  - **Eventos (tecla E):** show local, quermesse (festa junina em junho e julho) e feira de artesanato na praça, sem precisar de Centro Cultural. Show sertanejo regional com 20 mil habitantes; shows nacional e internacional no Centro Cultural. Empresas da cidade patrocinam; o público cansa se tiver festa toda semana; chuva espanta gente; sem segurança, pode ter briga. No dia aparecem palco, público, o prefeito e fogos à noite.
+  - **Empresas no mapa:** o lote de cada proposta ganha uma placa com a marca da empresa e um alerta "$" (clique para negociar). Obras de empresas e da prefeitura têm guindaste, placa "Em breve" e operário; lojas pequenas em obra ficam com andaime.
+  - **Mais movimento:** feira na praça aos domingos de manhã, gente passeando nas praças, bandos de pássaros, viaturas com giroflex passando e postes acesos à noite.
+  - **Recursos sem destino:** Emenda Pix e Auxílio Financeiro aos Municípios (entram direto no caixa) e verbas para eventos (ProAC e Turismo e Festas Populares). Deputados também mandam emendas Pix.
 - **Negociação mais justa:** as empresas aceitam contrapartidas com mais facilidade. Cada contrapartida mostra se é leve, média ou pesada para aquela empresa: uma creche pesa para uma academia, mas pouco para uma montadora.
   - O interesse das empresas pela cidade aparece na mesa e sobe com a população, a mão de obra disponível, a aprovação do prefeito e as empresas que já vieram.
   - Dificuldade: no Fácil as empresas cedem mais, têm mais paciência e cidades rivais aparecem menos; no Difícil cobram quase tudo o que pedem e disputam mais com as rivais.
@@ -83,9 +105,12 @@ A fonte dos textos (Nunito) vem junto, na pasta `fonts`, e funciona sem internet
 | `js/empresas.js` | Catálogo de empresas, negociação, instalação, efeitos e fiscalização |
 | `js/licitacoes.js` | Construtoras, licitação de obras, contratos de serviço e seus efeitos |
 | `js/recursos.js` | Programas federais e estaduais, emendas, ofertas e convênios |
+| `js/vida.js` | Avisos, ocorrências na cidade e eventos/shows |
 | `js/som.js` | Música e efeitos sonoros (Web Audio) |
 | `js/art.js` | Pixel art gerada por código, versão em alta resolução, ícones e moldura de madeira |
-| `js/map.js` | Mapa e cena do Phaser: câmera, trânsito, balões, inaugurações |
+| `js/map.js` | Mapa e cena do Phaser: câmera, trânsito, falas, inaugurações |
+| `js/mapa-vida.js` | Ocorrências, shows, feira, guindastes, pássaros e luzes no mapa |
+| `js/mapa-praca.js` | Praça Central: chafariz, coreto, gente, eventos e protestos animados |
 | `js/ui.js` | Painéis, jornal, votação, eleição e tela inicial |
 | `css/style.css` | Visual da interface |
 | `lib/phaser.min.js` | Motor Phaser 3.80.1 (funciona sem internet) |

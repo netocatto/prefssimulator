@@ -22,6 +22,10 @@ const PROGRAMAS = [
   { id: 'asfalto_sp',  nome: 'Pavimenta SP',                    esfera: 'estadual', tipo: 'servico', alvo: 'asfalto',   valor: [1.5e6, 3e6],   contra: 0.10, prazo: 8,  chance: 0.55, projeto: 40e3 },
   { id: 'onibus_fed',  nome: 'Mobilidade Urbana',               esfera: 'federal',  tipo: 'servico', alvo: 'onibus',    valor: [1.5e6, 2.5e6], contra: 0.20, prazo: 8,  chance: 0.40, projeto: 50e3 },
   { id: 'led_fed',     nome: 'Luz Eficiente',                   esfera: 'federal',  tipo: 'servico', alvo: 'led',       valor: [1.0e6, 2e6],   contra: 0.10, prazo: 8,  chance: 0.50, projeto: 40e3 },
+  { id: 'pix_fed',     nome: 'Emenda Pix (transferência especial)', esfera: 'federal',  tipo: 'livre',   alvo: 'livre',     valor: [0.3e6, 1.2e6], contra: 0,    prazo: 0,  chance: 0.45, projeto: 10e3 },
+  { id: 'custeio_sp',  nome: 'Auxílio Financeiro aos Municípios',   esfera: 'estadual', tipo: 'livre',   alvo: 'livre',     valor: [0.5e6, 1.8e6], contra: 0,    prazo: 0,  chance: 0.35, projeto: 20e3 },
+  { id: 'proac_sp',    nome: 'ProAC – Apoio a Eventos Culturais',   esfera: 'estadual', tipo: 'evento',  alvo: 'evento',    valor: [80e3, 400e3],  contra: 0.10, prazo: 10, chance: 0.60, projeto: 15e3 },
+  { id: 'festas_fed',  nome: 'Turismo e Festas Populares',          esfera: 'federal',  tipo: 'evento',  alvo: 'evento',    valor: [150e3, 1.2e6], contra: 0.10, prazo: 10, chance: 0.45, projeto: 25e3 },
   { id: 'merenda_fed', nome: 'Alimentação Escolar Reforçada',   esfera: 'federal',  tipo: 'servico', alvo: 'merenda',   valor: [1.0e6, 2e6],   contra: 0.10, prazo: 8,  chance: 0.60, projeto: 30e3 },
 ];
 const DEPUTADOS = [
@@ -41,7 +45,7 @@ const Recursos = (() => {
   const pick = arr => arr[Math.floor(Math.random() * arr.length)];
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const prog = id => PROGRAMAS.find(p => p.id === id);
-  const nomeAlvo = (tipo, alvo) => tipo === 'predio' ? PREDIOS[alvo].nome : Licitacoes.serv(alvo).nome;
+  const nomeAlvo = (tipo, alvo) => tipo === 'predio' ? PREDIOS[alvo].nome : tipo === 'livre' ? 'Livre uso (vai para o caixa)' : tipo === 'evento' ? 'Shows e eventos' : Licitacoes.serv(alvo).nome;
   let uid = Date.now() % 100000;
 
   function garantir() {
@@ -114,6 +118,15 @@ const Recursos = (() => {
     const s = S(); const of = s.ofertasRecursos.find(x => x.id === ofId); if (!of) return;
     if (bloqueio()) { Sim.emit('mudou'); return false; }
     s.ofertasRecursos = s.ofertasRecursos.filter(x => x !== of);
+    if (of.tipo === 'livre') {
+      // dinheiro sem destino fixo: entra direto no caixa
+      s.caixa += of.valor;
+      s.convenios.push({ ...of, id: 'cv' + (uid++), status: 'usado', prazoMes: s.mesIndex });
+      Sim.noticia(5, `Cidade recebe ${Sim.fmtDinheiro(of.valor)} ${of.origem} de livre uso`, 'Dinheiro entra direto no caixa da prefeitura');
+      s.humor.global += 0.5;
+      Sim.emit('mudou');
+      return true;
+    }
     s.convenios.push({ ...of, id: 'cv' + (uid++), status: 'aceito', prazoMes: s.mesIndex + of.prazo });
     Sim.noticia(5, `Cidade garante ${Sim.fmtDinheiro(of.valor)} ${of.origem} para ${nomeAlvo(of.tipo, of.alvo).toLowerCase()}`, `Prazo para usar: ${of.prazo} meses`);
     s.humor.global += 1;
@@ -190,12 +203,23 @@ const Recursos = (() => {
     if (s.mesIndex >= s.proxEmenda && !bloqueio()) {
       s.proxEmenda = s.mesIndex + 4 + Math.floor(Math.random() * 4);
       const dep = pick(DEPUTADOS);
+      if (Math.random() < 0.4) {
+        const valor = Math.round(rnd(0.2, 0.9) * 1e6 / 1e4) * 1e4;
+        criarOferta({ progId: null, nome: `Emenda Pix do ${dep.nome}`, esfera: 'emenda', origem: `em emenda Pix do ${dep.nome} (${dep.partido})`,
+          tipo: 'livre', alvo: 'livre', valor, contra: 0, prazo: 0, deputado: dep });
+        Sim.noticia(4, `${dep.nome} manda emenda Pix de ${Sim.fmtDinheiro(valor)} para a cidade`, 'Dinheiro de livre uso');
+        return finalizarMes();
+      }
       const p = pick(PROGRAMAS.filter(x => x.tipo === 'predio' && x.alvo !== 'hospital'));
       const valor = Math.round(rnd(0.4, 1.2) * Math.min(p.valor[0], PREDIOS[p.alvo].custo) / 1e4) * 1e4;
       criarOferta({ progId: null, nome: `Emenda do ${dep.nome}`, esfera: 'emenda', origem: `em emenda do ${dep.nome} (${dep.partido})`,
         tipo: 'predio', alvo: p.alvo, valor, contra: 0, prazo: 12, deputado: dep });
       Sim.noticia(4, `${dep.nome} destina emenda de ${Sim.fmtDinheiro(valor)} à cidade`, `Para ${PREDIOS[p.alvo].nome.toLowerCase()}`);
     }
+    finalizarMes();
+  }
+  function finalizarMes() {
+    const s = S();
     // ofertas que ninguém respondeu
     for (const of of s.ofertasRecursos.slice()) if (s.mesIndex >= of.expira) {
       s.ofertasRecursos = s.ofertasRecursos.filter(x => x !== of);

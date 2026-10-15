@@ -65,6 +65,7 @@ const Sim = (() => {
     S.vereadores.forEach((v, i) => { if (i % 3 === 0) novoPedido(v); });
     iniciarMandato(promessas);
     Recursos.garantir();
+    if (typeof Vida !== 'undefined') Vida.garantir();
     // aprovação inicial = alvo + lua de mel
     const alvo = calcularAlvos();
     for (const b of BAIRROS) for (const g of GRUPOS) S.bairros[b.id].aprov[g.id] = clamp(alvo[b.id][g.id], 0, 100);
@@ -467,6 +468,7 @@ const Sim = (() => {
     if (S.projeto && S.projeto.sessao.mesIndex === S.mesIndex && S.projeto.sessao.dia === S.dia) votarProjeto();
     Empresas.votarPauta();
     Empresas.dia();
+    if (typeof Vida !== 'undefined') Vida.dia();
 
     S.dia++;
     if (S.dia > diasNoMes(S.mes, S.ano)) { fecharMes(); }
@@ -911,7 +913,7 @@ const Sim = (() => {
     let texto = (T[f.k] || T.geral);
     if (Array.isArray(texto)) texto = pick(texto);
     texto = texto.replace('{bairro}', b.nome).replace('{rival}', pick(S.rivais).nome);
-    const msg = { id: Date.now() + Math.random(), nome: pick(NOMES), bairro: b.id, grupo: g.id, texto, positivo, ouvida: false, data: `${S.dia}/${S.mes + 1}/${S.ano}` };
+    const msg = { id: Date.now() + Math.random(), nome: pick(NOMES), bairro: b.id, grupo: g.id, texto, positivo, ouvida: true, data: `${S.dia}/${S.mes + 1}/${S.ano}` };
     S.ouvidoria.unshift(msg);
     if (S.ouvidoria.length > 30) S.ouvidoria.pop();
     return msg;
@@ -991,10 +993,21 @@ const Sim = (() => {
       S = o; S.pausaForcada = false;
       if (!S.crescimento) S.crescimento = [];
       if (!S.negocios) S.negocios = [];
-      Empresas.garantirEstado(); Licitacoes.garantir(); Recursos.garantir();
+      migrarLotes();
+      Empresas.garantirEstado(); Licitacoes.garantir(); Recursos.garantir(); if (typeof Vida !== 'undefined') Vida.garantir();
       emit('inicio');
       return true;
     } catch (e) { return false; }
+  }
+  // jogos salvos antes da Praça Central: atualiza a posição da igreja e da praça
+  function migrarLotes() {
+    for (const base of LOTES_INICIAIS.filter(l => l.id === 'P3' || l.id === 'P4')) {
+      const l = S.lotes.find(x => x.id === base.id); if (!l) continue;
+      l.x = base.x; l.y = base.y; if (base.w) { l.w = base.w; l.h = base.h; l.central = true; }
+      const dentro = (x, y, w, h) => x < l.x + (l.w || 3) && x + w > l.x && y < l.y + (l.h || 3) && y + h > l.y;
+      for (const it of (S.crescimento || [])) if (it.x != null && it.x >= 0 && dentro(it.x, it.y, it.tipo === 'mansao' ? 3 : 2, it.tipo === 'mansao' ? 3 : 2)) { it.x = null; it.y = null; }
+    }
+    for (const o of (S.ocorrencias || [])) o.x = null;
   }
   function apagarSave(id) {
     id = id || (S && S.saveId);

@@ -35,7 +35,8 @@ const Mapa = (() => {
   let ocupado = null;        // tiles com decoração/lote
   const casasPorBairro = {}; // posições (px) de casas para os balões
   const chamines = [];
-  const blocosBairro = {};   // quarteirões de cada bairro (para o crescimento natural)
+  const blocosBairro = {};
+  const postes = [];         // posição das lâmpadas (brilham à noite)   // quarteirões de cada bairro (para o crescimento natural)
   let desenhos = [];         // decoração a desenhar em ordem de profundidade
 
   function idx(x, y) { return y * MAP_W + x; }
@@ -47,7 +48,7 @@ const Mapa = (() => {
     for (let y = RIO.y1; y <= RIO.y2; y++) for (let x = 0; x < MAP_W; x++) grid[idx(x, y)] = 2;
     for (const r of RUAS_H) for (let y = r.y; y < r.y + r.h; y++) for (let x = r.x1; x <= r.x2; x++) grid[idx(x, y)] = 1;
     for (const r of RUAS_V) for (let x = r.x; x < r.x + r.w; x++) for (let y = r.y1; y <= r.y2; y++) grid[idx(x, y)] = 1;
-    for (const l of LOTES_INICIAIS) for (let y = l.y; y < l.y + 3; y++) for (let x = l.x; x < l.x + 3; x++) ocupado[idx(x, y)] = 1;
+    for (const l of LOTES_INICIAIS) for (let y = l.y; y < l.y + (l.h || 3); y++) for (let x = l.x; x < l.x + (l.w || 3); x++) ocupado[idx(x, y)] = 1;
   }
 
   function livre(x, y, w, h, bloco) {
@@ -152,12 +153,12 @@ const Mapa = (() => {
 
     // postes nas calçadas das avenidas
     for (let x = 1; x < 68; x += 4) {
-      if (tipo(x, 19) === 0) agendar(20 * TILE + 2, () => Art.poste(gD, x * TILE + 12, 20 * TILE - 26));
-      if (tipo(x, 22) === 0) agendar(22 * TILE + 30, () => Art.poste(gD, x * TILE + 12, 22 * TILE + 2));
+      if (tipo(x, 19) === 0) { agendar(20 * TILE + 2, () => Art.poste(gD, x * TILE + 12, 20 * TILE - 26)); postes.push({ x: x * TILE + 16, y: 20 * TILE - 22 }); }
+      if (tipo(x, 22) === 0) { agendar(22 * TILE + 30, () => Art.poste(gD, x * TILE + 12, 22 * TILE + 2)); postes.push({ x: x * TILE + 16, y: 22 * TILE + 6 }); }
     }
     for (let y = 1; y < 42; y += 4) {
-      if (tipo(36, y) === 0 && tipo(37, y) === 1) agendar(y * TILE + 28, () => Art.poste(gD, 37 * TILE + 0, y * TILE));
-      if (tipo(39, y) === 0 && tipo(38, y) === 1) agendar(y * TILE + 28, () => Art.poste(gD, 38 * TILE + 24, y * TILE));
+      if (tipo(36, y) === 0 && tipo(37, y) === 1) { agendar(y * TILE + 28, () => Art.poste(gD, 37 * TILE + 0, y * TILE)); postes.push({ x: 37 * TILE + 4, y: y * TILE + 4 }); }
+      if (tipo(39, y) === 0 && tipo(38, y) === 1) { agendar(y * TILE + 28, () => Art.poste(gD, 38 * TILE + 24, y * TILE)); postes.push({ x: 38 * TILE + 28, y: y * TILE + 4 }); }
     }
 
     // decoração dos quarteirões
@@ -331,6 +332,34 @@ const Mapa = (() => {
     return null;
   }
 
+  // ponto numa rua do bairro (para buracos, acidentes, vazamentos)
+  function pontoRua(bairro, rnd) {
+    const b = BAIRROS.find(x => x.id === bairro); if (!b || !grid) return null;
+    const [x1, y1, x2, y2] = b.rect;
+    for (let i = 0; i < 300; i++) {
+      const tx = x1 + Math.floor(rnd() * (x2 - x1 + 1)), ty = y1 + Math.floor(rnd() * (y2 - y1 + 1));
+      if (tipo(tx, ty) === 1 && ty < RIO.y1 && tipo(tx + 1, ty) === 1 && tipo(tx, ty + 1) !== 2) return { x: tx * TILE - 16, y: ty * TILE - 14 };
+    }
+    return null;
+  }
+  // terreno baldio ou com árvore (incêndio no mato, árvore caída)
+  function pontoTerreno(bairro, rnd) {
+    const b = BAIRROS.find(x => x.id === bairro); if (!b || !grid) return null;
+    const [x1, y1, x2, y2] = b.rect;
+    for (let i = 0; i < 400; i++) {
+      const tx = x1 + Math.floor(rnd() * (x2 - x1)), ty = y1 + Math.floor(rnd() * (y2 - y1));
+      const ok = (x, y) => tipo(x, y) === 0 && ocupado[idx(x, y)] !== 1;
+      if (ok(tx, ty) && ok(tx + 1, ty) && ty < RIO.y1) return { x: tx * TILE - 16, y: ty * TILE - 16 };
+    }
+    return pontoRua(bairro, rnd);
+  }
+  // ponto num quintal/calçada de casa do bairro (lixo, árvore, incêndio)
+  function pontoCasa(bairro, rnd) {
+    const casas = casasPorBairro[bairro]; if (!casas || !casas.length) return pontoRua(bairro, rnd);
+    const c = casas[Math.floor(rnd() * casas.length)];
+    return { x: c.x - 32, y: c.y + 24 };
+  }
+
   // faixas de trânsito para carros e pedestres
   function faixas() {
     const carros = [], pedestres = [];
@@ -352,7 +381,7 @@ const Mapa = (() => {
     return { carros, pedestres };
   }
 
-  return { desenharChao, bairroNoTile, casasPorBairro, chamines, faixas, PLACAS, RIO, BLOCO_W, BLOCO_H, reservarCelula, marcarCelula };
+  return { desenharChao, bairroNoTile, casasPorBairro, chamines, faixas, PLACAS, RIO, BLOCO_W, BLOCO_H, reservarCelula, marcarCelula, pontoRua, pontoCasa, pontoTerreno, postes };
 })();
 
 // =====================================================================
@@ -452,6 +481,7 @@ class CidadeScene extends Phaser.Scene {
     Sim.on('mes', () => { this.atualizarLotes(); this.atualizarCrescimento(); });
     Sim.on('acordo', () => { this.atualizarLotes(); this.atualizarCrescimento(); });
     Sim.on('inauguracaoEmpresa', e => { this.atualizarLotes(); const l = Sim.S.lotes.find(x => x.id === e.loteId); if (l) this.inauguracao(l); });
+    this.iniciarVida();
     window.Cena = this;
   }
 
@@ -554,23 +584,23 @@ class CidadeScene extends Phaser.Scene {
   loteNoPonto(wx, wy) {
     const tx = Math.floor(wx / TILE), ty = Math.floor(wy / TILE);
     if (!Sim.S) return null;
-    return Sim.S.lotes.find(l => tx >= l.x && tx < l.x + 3 && ty >= l.y && ty < l.y + 3) || null;
+    return Sim.S.lotes.find(l => tx >= l.x && tx < l.x + (l.w || 3) && ty >= l.y && ty < l.y + (l.h || 3)) || null;
   }
 
   hover(p) {
     const w = this.cameras.main.getWorldPoint(p.x, p.y);
     const l = this.loteNoPonto(w.x, w.y);
-    const b = this.baloes.find(bb => bb.spr.getBounds().contains(w.x, w.y));
-    this.hoverLote = l;
+    const b = this.alvoVida(w);
+    this.hoverLote = b ? null : l;
     this.game.canvas.style.cursor = (l || b) ? 'pointer' : 'grab';
   }
 
   clique(p) {
     if (!Sim.S || UI.bloqueado()) return;
     const w = this.cameras.main.getWorldPoint(p.x, p.y);
-    const b = this.baloes.find(bb => bb.spr.getBounds().contains(w.x, w.y));
-    if (b) { UI.abrirVoz(b.msg); this.removerBalao(b); return; }
+    if (this.cliqueVida(w)) return;
     const l = this.loteNoPonto(w.x, w.y);
+    if (l && l.central) { UI.abrirPraca(); return; }
     if (l) { this.selecionado = l.id; UI.abrirLote(l.id); return; }
     const bairro = Mapa.bairroNoTile(Math.floor(w.x / TILE), Math.floor(w.y / TILE));
     if (bairro) UI.abrirBairro(bairro);
@@ -583,6 +613,7 @@ class CidadeScene extends Phaser.Scene {
   atualizarLotes() {
     const lotes = Sim.S ? Sim.S.lotes : LOTES_INICIAIS.map(l => ({ ...l, predio: l.ocupado || null }));
     for (const l of lotes) {
+      if (l.central) { if (!this.praca && this.criarPracaCentral) this.criarPracaCentral(l); continue; }
       let key;
       const emp = l.empresa && Sim.S ? Sim.S.empresas.find(e => e.id === l.empresa) : null;
       if (emp && emp.status === 'instalacao') key = 'p_obra';
@@ -673,6 +704,7 @@ class CidadeScene extends Phaser.Scene {
         const lista = ag.tipo === 'carro' ? this.faixas.carros : this.faixas.pedestres;
         ag.f = Phaser.Utils.Array.GetRandom(lista);
         if (ag.tipo === 'carro') {
+          if (ag.sirene) { ag.sirene = false; ag.vel = 50 + Math.random() * 40; }
           ag.spr.setTexture(this.texturaCarro(ag.f, Math.floor(Math.random() * 7))).setFlipX(ag.f.eixo === 'x' && ag.f.dir < 0);
           ag.t = ag.f.dir > 0 ? ag.f.a - 26 : ag.f.b;
         } else { ag.dir = Math.random() < .5 ? 1 : -1; ag.t = ag.dir > 0 ? ag.f.a : ag.f.b; ag.spr.setFlipX(ag.dir < 0); }
@@ -697,12 +729,23 @@ class CidadeScene extends Phaser.Scene {
     const casas = Mapa.casasPorBairro[msg.bairro];
     if (!casas || !casas.length) return;
     const pos = Phaser.Utils.Array.GetRandom(casas);
-    const spr = this.add.image(pos.x - 11, pos.y - 26, msg.positivo ? 'balao_bom' : 'balao').setOrigin(0).setScale(0.5).setDepth(60);
-    this.tweens.add({ targets: spr, y: spr.y - 5, yoyo: true, repeat: -1, duration: 650, ease: 'Sine.easeInOut' });
-    this.baloes.push({ spr, msg, vida: 45 });
-    UI.novaVoz(msg);
+    const txt = this.add.text(0, 0, msg.texto, { fontFamily: '"Nunito", "Segoe UI", sans-serif', fontSize: '13px', color: '#3d2410',
+      wordWrap: { width: 170 }, lineSpacing: -1 }).setResolution(2);
+    const w = txt.width + 14, h = txt.height + 10;
+    const bx = pos.x - w / 2, by = pos.y - h - 16;
+    const g = this.add.graphics();
+    g.fillStyle(msg.positivo ? 0xeaf7dc : 0xfff6e2, 0.97).fillRoundedRect(bx, by, w, h, 6);
+    g.lineStyle(2, msg.positivo ? 0x3f9b46 : 0xb8652a, 1).strokeRoundedRect(bx, by, w, h, 6);
+    g.fillStyle(msg.positivo ? 0xeaf7dc : 0xfff6e2, 1).fillTriangle(pos.x - 6, by + h - 1, pos.x + 6, by + h - 1, pos.x, by + h + 9);
+    g.lineStyle(2, msg.positivo ? 0x3f9b46 : 0xb8652a, 1).lineBetween(pos.x - 6, by + h, pos.x, by + h + 9).lineBetween(pos.x + 6, by + h, pos.x, by + h + 9);
+    txt.setPosition(bx + 7, by + 5);
+    const cont = this.add.container(0, 0, [g, txt]).setDepth(62).setAlpha(0);
+    const b = { cont, msg };
+    this.baloes.push(b);
+    this.tweens.add({ targets: cont, alpha: 1, y: -4, duration: 400, ease: 'Quad.easeOut' });
+    this.time.delayedCall(6500, () => this.tweens.add({ targets: cont, alpha: 0, duration: 600, onComplete: () => this.removerBalao(b) }));
   }
-  removerBalao(b) { b.spr.destroy(); this.baloes = this.baloes.filter(x => x !== b); }
+  removerBalao(b) { b.cont.destroy(); this.baloes = this.baloes.filter(x => x !== b); }
 
   // ------------------------------------------------------------ inauguração
   inauguracao(l) {
@@ -749,12 +792,12 @@ class CidadeScene extends Phaser.Scene {
     const alvo = cam.zoom < 0.75 ? 0.95 : 0;
     for (const t of this.rotulos) t.alpha += (alvo - t.alpha) * 0.15;
 
-    // balões
+    // falas dos moradores (aparecem e somem sozinhas)
     if (vel > 0) {
       this.tempoBalao -= dt * Math.min(vel, 3);
-      if (this.tempoBalao <= 0 && this.baloes.length < 4) { this.criarBalao(); this.tempoBalao = 10 + Math.random() * 10; }
-      for (const b of this.baloes.slice()) { b.vida -= dt; if (b.vida <= 0) this.removerBalao(b); }
+      if (this.tempoBalao <= 0 && this.baloes.length < 2) { this.criarBalao(); this.tempoBalao = 9 + Math.random() * 9; }
     }
+    this.atualizarVida(time, dt, vel);
 
     // obras e destaque
     const g = this.grafObras; g.clear();
@@ -770,7 +813,7 @@ class CidadeScene extends Phaser.Scene {
     const sel = Sim.S && this.selecionado && UI.painelAberto() === 'lote' ? Sim.S.lotes.find(l => l.id === this.selecionado) : null;
     for (const [l, cor, a] of [[this.hoverLote, 0xffffff, 0.7], [sel, 0xf2d33a, 1]]) {
       if (!l) continue;
-      d.lineStyle(3, cor, a).strokeRect(l.x * TILE - 2, l.y * TILE - 2, 3 * TILE + 4, 3 * TILE + 4);
+      d.lineStyle(3, cor, a).strokeRect(l.x * TILE - 2, l.y * TILE - 2, (l.w || 3) * TILE + 4, (l.h || 3) * TILE + 4);
     }
   }
 }

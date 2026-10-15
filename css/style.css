@@ -422,11 +422,9 @@ details.opcao:hover { border-color: var(--madeira-c); }
 @media (max-width: 1100px) {
   .placa { width: 250px; } #h-cidade { font-size: 20px; }
   .relogio { width: 290px; }
-  #painel { width: min(440px, calc(100vw - 20px)); }
 }
 @media (max-width: 820px) {
   .placa-linha { display: none; }
-  #painel { left: max(10px, env(safe-area-inset-left, 0px)); width: auto; top: 160px; }
   .barra-icones { overflow-x: auto; justify-content: flex-start; }
   .barra-icones button { width: 50px; height: 50px; flex: none; background-size: 38px 38px; }
   .mesa-cols { grid-template-columns: 1fr; }
@@ -542,3 +540,34 @@ details.opcao:hover { border-color: var(--madeira-c); }
 .atrativ small { color: var(--texto-2); font-size: 12px; }
 .peso-cp { justify-self: start; font-size: 11px; font-weight: 700; padding: 0 6px; border-radius: 8px; margin-top: 2px; }
 .peso-cp.leve { background: #d6efc2; color: #2c5a17; } .peso-cp.medio { background: #f7e2a6; color: #6a4a08; } .peso-cp.pesado { background: #f6c7bb; color: #7a2412; }
+
+/* ---- v0.9: escala única da interface e proporções ---- */
+:root { --ui: 1; }
+.placa, .relogio, .barra-icones, #painel, #modal-corpo { zoom: var(--ui); }
+.placa, .relogio { width: 316px; }
+.placa.recolhido, .relogio.recolhido { width: auto; }
+#painel { width: 440px; top: 230px; bottom: 96px; max-height: none; }
+#painel.cheio { left: 8px; right: 8px; width: auto; z-index: 6; }
+#modal-corpo { max-height: calc((100vh - 32px) / var(--ui)); }
+#toasts { display: none !important; }
+@media (max-width: 1100px) { .placa, .relogio { width: 316px; } #h-cidade { font-size: 24px; } }
+
+/* avisos */
+.aviso { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: start; padding: 7px 9px; background: var(--card, #fbecc9); border: 2px solid var(--perg-x); border-radius: 3px; }
+.aviso p { margin: 0; font-size: 15px; }
+.aviso.novo { border-color: var(--madeira); background: #fff4d4; }
+.aviso.alerta { border-left: 6px solid var(--vermelho); } .aviso.ouro { border-left: 6px solid var(--ouro); } .aviso.ruim { border-left: 6px solid #8a2a1a; }
+.aviso-data { font-size: 12px; color: var(--texto-2); font-weight: 700; padding-top: 2px; }
+.btn.btn-p { padding: 3px 8px; font-size: 13px; white-space: nowrap; }
+.ocorrs { display: grid; gap: 6px; }
+.ocorr { display: grid; text-align: left; padding: 7px 10px; background: #ffe7dc; border: 2px solid #d6705a; border-radius: 3px; cursor: pointer; font: inherit; color: inherit; }
+.ocorr small { color: var(--texto-2); }
+.evento-acao { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.evento-acao select { font: inherit; padding: 4px 6px; border: 2px solid var(--perg-x); background: #fffaf0; }
+
+/* praça central e protestos */
+.protesto { display: grid; gap: 6px; padding: 10px; background: #ffe7dc; border: 2px solid #c4302b; border-radius: 4px; }
+.faixa-prot { margin: 0; padding: 4px 10px; background: #f6f2e6; color: #c4302b; border: 2px solid #3d2410; text-align: center; letter-spacing: .06em; font-size: 18px; }
+.resp-prot { display: grid; gap: 6px; }
+.carta.perigo-c { border-color: #c4302b; }
+.carta.perigo-c b { color: #a3301f; }

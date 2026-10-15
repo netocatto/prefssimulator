@@ -46,8 +46,10 @@ const UI = (() => {
     // indicador na Câmara se houver pedido
     const pedidos = S.vereadores.filter(v => v.pedido).length;
     $('#m-camara').dataset.badge = S.projeto ? '!' : pedidos ? pedidos : '';
-    const naoOuvidas = S.ouvidoria.filter(m => !m.ouvida).length;
-    $('#m-ouvidoria').dataset.badge = naoOuvidas ? naoOuvidas : '';
+    $('#m-ouvidoria').dataset.badge = '';
+    const nl = Vida.naoLidos();
+    $('#m-avisos').dataset.badge = nl ? (nl > 9 ? '9+' : nl) : '';
+    $('#m-eventos').dataset.badge = Vida.protestoAtivo() ? '!' : Vida.eventoHoje() ? '♪' : '';
     $('#m-recursos').dataset.badge = (S.ofertasRecursos && S.ofertasRecursos.length) ? S.ofertasRecursos.length : '';
     $('#m-licitacoes').dataset.badge = S.lotes.some(l => l.obra && l.obra.parada) ? '!' : '';
     $('#m-empresas').dataset.badge = (S.cobrancas && S.cobrancas.length) ? '!' : (S.propostas && S.propostas.length) ? S.propostas.length : '';
@@ -99,11 +101,26 @@ const UI = (() => {
     $('#painel').hidden = false;
     posicionarPainel();
   }
-  // o painel começa logo abaixo do relógio, em qualquer tamanho de tela
+  // escala única da interface: tudo cresce e encolhe junto com a tela
+  let escala = 1;
+  function escalaUI() {
+    const w = window.innerWidth, h = window.innerHeight;
+    escala = Math.min(w / 1440, h / 860);
+    escala = h < 520 ? Sim.clamp(escala, 0.62, 0.8) : Sim.clamp(escala, 0.72, 1.4);
+    document.documentElement.style.setProperty('--ui', escala.toFixed(3));
+    posicionarPainel();
+  }
+  // o painel fica entre o relógio e a barra de ícones; em tela estreita cobre a parte de cima
   function posicionarPainel() {
-    const r = document.querySelector('.relogio').getBoundingClientRect();
-    if (window.innerWidth > 820) $('#painel').style.top = Math.round(r.bottom + 6) + 'px';
-    else $('#painel').style.top = Math.round(Math.max(r.bottom, document.querySelector('.placa').getBoundingClientRect().bottom) + 6) + 'px';
+    const p = $('#painel'), z = escala;
+    const rel = document.querySelector('.relogio').getBoundingClientRect();
+    const barra = document.querySelector('.barra-icones').getBoundingClientRect();
+    const estreita = window.innerWidth / z < 980 || window.innerHeight < 520;
+    p.classList.toggle('cheio', estreita);
+    const topo = estreita ? 8 : rel.bottom + 8;
+    const fundo = Math.max(8, window.innerHeight - barra.top + 8);
+    p.style.top = Math.round(topo / z) + 'px';
+    p.style.bottom = Math.round(fundo / z) + 'px';
   }
   // recolher/expandir a placa da cidade e o relógio (bom para celular pequeno)
   function ligarRecolher() {
@@ -143,7 +160,7 @@ const UI = (() => {
     corpo.scrollTop = rolagem;
     if (r.depois) r.depois(corpo);
   }
-  const PAINEIS_VIVOS = ['lote', 'populacao', 'promessas', 'camara', 'bairro', 'ouvidoria', 'empresas'];
+  const PAINEIS_VIVOS = ['lote', 'populacao', 'promessas', 'camara', 'bairro', 'ouvidoria', 'empresas', 'avisos', 'eventos', 'ocorrencia', 'praca'];
   const PAINEIS_MENSAIS = ['financas', 'regiao', 'jornal', 'licitacoes', 'recursos'];
 
   const RENDER = {};
@@ -418,16 +435,12 @@ const UI = (() => {
       </div>`;
     }).join('');
     const elogios = r.elogios.map(e => NECESSIDADES[e.k] && NECESSIDADES[e.k].bom).filter(Boolean);
-    const naoOuvidas = S.ouvidoria.filter(m => !m.ouvida).length;
     return {
       titulo: 'Ouvidoria',
       html: `<p class="nota">Resumo do que a população mais cobra da prefeitura agora.</p>
         <h3>O que a população precisa</h3>${probs || '<p class="vazio">Ninguém está reclamando de nada importante. Aproveite!</p>'}
         ${elogios.length ? `<h3>O que está agradando</h3><p class="elogios">${elogios.join(' · ')}</p>` : ''}
-        <div class="prospec">${impactos([['Mensagens sem resposta', naoOuvidas], ['Efeito de responder', naoOuvidas ? 'cada pessoa fica um pouco mais satisfeita' : '—', naoOuvidas ? 'pos' : '']])}
-          <button class="btn ouro" id="ouvir-todos" ${naoOuvidas ? '' : 'disabled'}>Responder todas</button></div>
-        <p class="nota">Os balões sobre as casas são moradores falando com a prefeitura. Clique neles no mapa.</p>`,
-      depois: el => { const b = el.querySelector('#ouvir-todos'); if (b) b.addEventListener('click', () => { const n = Sim.ouvirTodos(); toast(`${n} ${n === 1 ? 'mensagem respondida' : 'mensagens respondidas'}.`); renderPainel(); atualizarHUD(); }); },
+        <p class="nota">As falas que aparecem sobre as casas são moradores comentando a cidade. A equipe da Ouvidoria responde sozinha; aqui fica só o resumo.</p>`,
     };
   };
 
@@ -671,6 +684,8 @@ const UI = (() => {
   const ESFERA = { federal: 'Federal', estadual: 'Estadual', emenda: 'Emenda parlamentar' };
   function custoReferencia(tipo, alvo) { return tipo === 'predio' ? PREDIOS[alvo].custo : Licitacoes.serv(alvo).custo * 12; }
   function linhasOferta(of) {
+    if (of.tipo === 'livre') return [['Valor', D(of.valor), 'pos'], ['Para', 'Livre uso: entra direto no caixa'], ['Contrapartida da prefeitura', 'nenhuma'], ['Prazo', 'Aceitou, recebeu']];
+    if (of.tipo === 'evento') return [['Valor', D(of.valor), 'pos'], ['Para', 'Shows, festas e feiras (painel Eventos)'], ['Contrapartida da prefeitura', pct(of.contra) + ' do custo do evento'], ['Prazo para usar', `${of.prazo} meses`], ['Se não usar no prazo', 'a verba é perdida', 'neg']];
     const ref = custoReferencia(of.tipo, of.alvo);
     const cob = Math.min(of.valor, ref * (1 - of.contra));
     return [
@@ -683,7 +698,7 @@ const UI = (() => {
     ];
   }
   function mostrarOferta(of) {
-    const como = of.tipo === 'predio' ? `Para usar, abra a licitação de ${PREDIOS[of.alvo].nome} em qualquer lote vazio.` : `Para usar, abra a licitação de ${Licitacoes.serv(of.alvo).nome} no painel de Licitações.`;
+    const como = of.tipo === 'livre' ? 'O dinheiro entra direto no caixa e pode ser usado no que você quiser.' : of.tipo === 'evento' ? 'Para usar, agende um show ou festa no painel Eventos: a verba paga parte do custo.' : of.tipo === 'predio' ? `Para usar, abra a licitação de ${PREDIOS[of.alvo].nome} em qualquer lote vazio.` : `Para usar, abra a licitação de ${Licitacoes.serv(of.alvo).nome} no painel de Licitações.`;
     modal(`<div class="oferta"><small class="eyebrow">${ESFERA[of.esfera]} · recurso aprovado</small>
       <h2 class="pos">${D(of.valor)} ${esc(of.origem)}</h2>
       <p>${esc(of.nome)}</p>
@@ -706,13 +721,15 @@ const UI = (() => {
       <small class="nota">${c.tipo === 'predio' ? 'Abra a licitação desse prédio em um lote vazio.' : 'Abra a licitação desse serviço no painel Licitações.'}</small></div>`).join('');
     const usados = S.convenios.filter(c => c.status === 'usado').length, perdidos = S.convenios.filter(c => c.status === 'perdido').length;
     const pedidos = S.pedidosRecursos.map(pd => { const p = Recursos.prog(pd.progId); return `<li>${esc(p.nome)} <small>resposta até ${Sim.fmtMesIndex(pd.resposta)}</small></li>`; }).join('');
-    const progs = Recursos.PROGRAMAS.map(p => {
+    const cartaoProg = p => {
       const pode = Recursos.podePedir(p);
       const c = Recursos.chance(p);
       return `<div class="emp-card"><div class="emp-top"><div><b>${esc(p.nome)}</b><small>${ESFERA[p.esfera]} · para ${Recursos.nomeAlvo(p.tipo, p.alvo).toLowerCase()}</small></div><span class="pill ${c >= .55 ? 'ok' : c >= .35 ? 'and' : 'ruim'}">Chance ${pct(c)}</span></div>
-        ${impactos([['Custo do projeto técnico', D(p.projeto), 'neg'], ['Verba possível', `${D(p.valor[0] * 0.75)} a ${D(p.valor[1])}`, 'pos'], ['Contrapartida', pct(p.contra)], ['Prazo de uso se aprovado', `${p.prazo} meses`], ['Resposta', 'em 1 a 2 meses']])}
+        ${impactos([['Custo do projeto técnico', D(p.projeto), 'neg'], ['Verba possível', `${D(p.valor[0] * 0.75)} a ${D(p.valor[1])}`, 'pos'], ['Contrapartida', pct(p.contra)], p.tipo === 'livre' ? ['Uso', 'livre: entra no caixa ao aceitar'] : ['Prazo de uso se aprovado', `${p.prazo} meses`], ['Resposta', 'em 1 a 2 meses']])}
         ${pode.ok ? `<button class="btn primario" data-pedir="${p.id}">Pedir recurso</button>` : `<small class="alerta">${pode.motivo}</small>`}</div>`;
-    }).join('');
+    };
+    const progsLivres = Recursos.PROGRAMAS.filter(p => p.tipo === 'livre' || p.tipo === 'evento').map(cartaoProg).join('');
+    const progs = Recursos.PROGRAMAS.filter(p => p.tipo !== 'livre' && p.tipo !== 'evento').map(cartaoProg).join('');
     return {
       titulo: 'Recursos federais e estaduais',
       html: `<div class="destaque gov">${gov('federal')}${gov('estadual')}</div>
@@ -722,11 +739,138 @@ const UI = (() => {
         <h3>Verbas garantidas</h3>${ativos || '<p class="vazio">Nenhuma verba esperando uso.</p>'}
         ${usados || perdidos ? `<p class="nota">${usados} já ${usados === 1 ? 'usada' : 'usadas'} · ${perdidos} ${perdidos === 1 ? 'perdida' : 'perdidas'} por prazo</p>` : ''}
         ${pedidos ? `<h3>Pedidos em análise</h3><ul class="futuras">${pedidos}</ul>` : ''}
-        <h3>Programas disponíveis</h3>${progs}`,
+        <h3>Verbas sem obra definida</h3><p class="nota">Dinheiro de livre uso (vai para o caixa) e apoio a shows e festas.</p>${progsLivres}
+        <h3>Programas para obras e serviços</h3>${progs}`,
       depois: el => {
         el.querySelectorAll('[data-pedir]').forEach(b => b.addEventListener('click', () => { if (Recursos.pedir(b.dataset.pedir)) { toast('Projeto enviado. A resposta sai em 1 a 2 meses.'); renderPainel(); atualizarHUD(); } }));
         el.querySelectorAll('[data-aceitar]').forEach(b => b.addEventListener('click', () => { Recursos.aceitar(b.dataset.aceitar); renderPainel(); atualizarHUD(); }));
         el.querySelectorAll('[data-recusar]').forEach(b => b.addEventListener('click', () => { Recursos.recusar(b.dataset.recusar); renderPainel(); atualizarHUD(); }));
+      },
+    };
+  };
+
+  // ----------------------------------------------------------- avisos
+  function irPara(alvo) {
+    if (!alvo || !window.Cena) return;
+    const S = Sim.S, cam = Cena.cameras.main;
+    if (alvo.ocorrencia) { const o = S.ocorrencias.find(x => x.id === alvo.ocorrencia); if (o && o.x > -900) { cam.pan(o.x + 32, o.y + 24, 600, 'Sine.easeInOut'); abrir('ocorrencia', o.id); return; } }
+    if (alvo.lote) { const l = S.lotes.find(x => x.id === alvo.lote); if (l) cam.pan((l.x + (l.w || 3) / 2) * TILE, (l.y + (l.h || 3) / 2) * TILE, 600, 'Sine.easeInOut'); if (l && l.central) abrir('praca'); }
+  }
+  RENDER.avisos = () => {
+    const S = Sim.S; Vida.garantir();
+    const lista = S.avisos.slice(0, 40).map((a, i) => `<div class="aviso ${a.tipo || ''} ${a.lido ? '' : 'novo'}">
+        <span class="aviso-data">${a.data}</span><p>${esc(a.txt)}</p>
+        ${a.alvo && (a.alvo.lote || (a.alvo.ocorrencia && S.ocorrencias.some(o => o.id === a.alvo.ocorrencia))) ? `<button class="btn btn-p" data-ir="${i}">Ver no mapa</button>` : ''}</div>`).join('');
+    const abertas = S.ocorrencias.filter(o => o.status === 'aberta');
+    const ocs = abertas.map(o => { const t = TIPOS_OCORRENCIA[o.tipo]; const resta = o.criada + t.prazo - Vida.hoje();
+      return `<button class="ocorr" data-oc="${o.id}"><b>${t.nome}</b><small>${Sim.bairroById(o.bairro).nome} · resolver por ${D(t.custo)} · ${resta <= 1 ? 'último dia' : 'faltam ' + resta + ' dias'}</small></button>`; }).join('');
+    setTimeout(() => Vida.marcarLidos(), 1200);
+    return {
+      titulo: 'Avisos',
+      html: `${ocs ? `<h3>Problemas esperando a prefeitura</h3><div class="ocorrs">${ocs}</div>` : '<p class="pos">Nenhum problema na rua agora.</p>'}
+        <h3>Últimos avisos</h3>${lista || '<p class="vazio">Nenhum aviso ainda.</p>'}`,
+      depois: el => {
+        el.querySelectorAll('[data-ir]').forEach(b => b.addEventListener('click', () => irPara(S.avisos[+b.dataset.ir].alvo)));
+        el.querySelectorAll('[data-oc]').forEach(b => b.addEventListener('click', () => irPara({ ocorrencia: b.dataset.oc })));
+      },
+    };
+  };
+
+  // ------------------------------------------------------ ocorrência
+  RENDER.ocorrencia = id => {
+    const S = Sim.S, o = S.ocorrencias.find(x => x.id === id);
+    if (!o) return { titulo: 'Ocorrência', html: '<p class="pos">Resolvido! A rua já está normal.</p>' };
+    const t = TIPOS_OCORRENCIA[o.tipo], resta = o.criada + t.prazo - Vida.hoje();
+    const status = o.status === 'reparo'
+      ? `<p class="pos">${o.auto === 'bombeiros' ? 'Os bombeiros da cidade estão no local.' : o.auto === 'contrato' ? 'A empresa contratada já está resolvendo.' : 'A equipe da prefeitura está trabalhando.'} Termina em ${Math.max(1, o.fim - Vida.hoje())} ${o.fim - Vida.hoje() > 1 ? 'dias' : 'dia'}.</p>`
+      : `${impactos([['Custo', D(t.custo), 'neg'], ['Tempo de reparo', `${t.dias} ${t.dias > 1 ? 'dias' : 'dia'}`], ['Moradores do bairro', 'aprovação sobe um pouco', 'pos'],
+          ['Se ninguém resolver', `${pts(t.efeito)} no humor do bairro (${Sim.bairroById(o.bairro).nome}) em ${Math.max(0, resta)} ${resta === 1 ? 'dia' : 'dias'}`, 'neg']])}
+        <button class="btn primario" id="resolver-oc">${t.acao} (${D(t.custo)})</button>
+        ${t.servico ? `<p class="nota">Dica: com o contrato de ${Licitacoes.serv(t.servico).nome.toLowerCase()} (Licitações), isso se resolve sozinho.</p>` : ''}
+        ${t.predio ? '<p class="nota">Dica: com um Posto de Bombeiros na cidade, incêndios são apagados sozinhos.</p>' : ''}`;
+    return {
+      titulo: t.nome,
+      html: `<p><b>${Sim.bairroById(o.bairro).nome}</b></p><p>${t.desc}</p>${status}<button class="btn" id="ver-oc">Ver no mapa</button>`,
+      depois: el => {
+        const b = el.querySelector('#resolver-oc');
+        if (b) b.addEventListener('click', () => { if (Vida.resolver(o.id)) { Som.sfx('obra'); renderPainel(); atualizarHUD(); } });
+        el.querySelector('#ver-oc').addEventListener('click', () => { if (window.Cena && o.x > -900) Cena.cameras.main.pan(o.x + 32, o.y + 24, 600, 'Sine.easeInOut'); });
+      },
+    };
+  };
+
+  // ---------------------------------------------------- Praça Central
+  RENDER.praca = () => {
+    const S = Sim.S; Vida.garantir();
+    const p = Vida.protestoAtivo(), hoje = Vida.eventoHoje();
+    const agend = S.eventos.filter(e => e.status === 'agendado' && e.loteId === 'P4').map(e => `<li><b>${TIPOS_EVENTO[e.tipo].nome}</b> <small>${e.quando}</small></li>`).join('');
+    const temGuarda = S.lotes.some(l => l.predio === 'guarda');
+    const chanceDiscurso = Math.round(Sim.clamp(Sim.aprovCidade() / 80, 0.25, 0.8) * 100);
+    let prot = '';
+    if (p) {
+      const g = GRUPOS.find(x => x.id === p.grupo).nome.toLowerCase();
+      prot = `<div class="protesto">
+        <small class="eyebrow">Protesto acontecendo</small>
+        <h3 class="faixa-prot">${esc(p.faixa)}</h3>
+        <p>${p.pessoas.toLocaleString('pt-BR')} pessoas, a maioria ${g}, cobram <b>${esc(p.nomeTema)}</b>. Gritam: "${esc(p.slogans[0])}"</p>
+        ${p.resposta ? `<p class="${p.resposta === 'vaia' ? 'neg' : 'pos'}">${{ comissao: 'Você recebeu uma comissão. Os manifestantes vão embora amanhã.', aplauso: 'Você discursou e foi aplaudido.', vaia: 'Você discursou e foi vaiado.' }[p.resposta] || ''}</p>` : `
+        <div class="resp-prot">
+          <button class="carta" data-resp="comissao"><b>Receber uma comissão</b><small>Conversa com os líderes no gabinete. Seguro: o grupo fica um pouco mais satisfeito.</small></button>
+          <button class="carta" data-resp="discurso"><b>Descer e discursar na praça</b><small>Arriscado: ${chanceDiscurso}% de chance de aplauso (depende da sua aprovação). Se vaiarem, a oposição cresce.</small></button>
+          ${temGuarda ? `<button class="carta perigo-c" data-resp="guarda"><b>Mandar a Guarda dispersar</b><small>Acaba na hora, mas o grupo, os jovens e a imprensa não perdoam.</small></button>` : ''}
+        </div>
+        <p class="nota">Se ninguém da prefeitura aparecer, o protesto termina em 2 dias e o grupo fica mais irritado.</p>`}
+      </div>`;
+    }
+    return {
+      titulo: 'Praça Central',
+      html: `${prot}
+        ${hoje && hoje.loteId === 'P4' ? `<div class="destaque"><div><small>Hoje na praça</small><strong>${TIPOS_EVENTO[hoje.tipo].nome}</strong><span>${(hoje.publico || 0).toLocaleString('pt-BR')} pessoas</span></div></div>` : ''}
+        <p class="nota">O coração da cidade: chafariz, coreto, bancos e pipoqueiro. Aqui acontecem os shows, a quermesse, a feira de domingo e também os protestos.</p>
+        ${agend ? `<h3>Programação</h3><ul class="futuras">${agend}</ul>` : '<p class="vazio">Nenhum evento marcado.</p>'}
+        <button class="btn primario" id="ir-eventos">Organizar um evento na praça</button>`,
+      depois: el => {
+        el.querySelectorAll('[data-resp]').forEach(b => b.addEventListener('click', () => { Vida.responderProtesto(b.dataset.resp); Som.sfx(b.dataset.resp === 'guarda' ? 'rejeitado' : 'clique'); renderPainel(); atualizarHUD(); }));
+        el.querySelector('#ir-eventos').addEventListener('click', () => abrir('eventos'));
+      },
+    };
+  };
+
+  // ---------------------------------------------------------- eventos
+  RENDER.eventos = () => {
+    const S = Sim.S; Vida.garantir();
+    const hoje = Vida.eventoHoje();
+    const agend = S.eventos.filter(e => e.status === 'agendado').map(e => `<li><b>${TIPOS_EVENTO[e.tipo].nome}</b> <small>${e.quando} · ${esc(e.local)}</small></li>`).join('');
+    const feitos = S.eventos.filter(e => e.status === 'feito').slice(-4).reverse().map(e => `<li>${TIPOS_EVENTO[e.tipo].nome} <small>${e.quando} · ${(e.publico || 0).toLocaleString('pt-BR')} pessoas${e.chuva ? ' · choveu' : ''}</small></li>`).join('');
+    const gruposTxt = ef => Object.entries(ef).map(([k, v]) => `${GRUPOS.find(g => g.id === k).nome.toLowerCase()} ${v > 0 ? '+' : ''}${String(v).replace('.', ',')}`).join(', ');
+    const cards = Object.entries(TIPOS_EVENTO).map(([id, t]) => {
+      const pode = Vida.podeAgendar(id), pv = Vida.previsao(id), locs = Vida.locais(id);
+      const pat = pv.patrocinio;
+      return `<div class="emp-card evento-card">
+        <div class="emp-top"><div><b>${t.nome}</b><small>${t.desc}</small></div></div>
+        ${impactos([['Custo total', D(t.custo)], pat.valor ? ['Patrocínio das empresas', `−${D(pat.valor)} (${esc(pat.nomes.join(', '))}${pat.mais ? ` e mais ${pat.mais}` : ''})`, 'pos'] : ['Patrocínio', 'nenhuma empresa na cidade ainda'],
+          pv.verba ? ['Verba de evento (Recursos)', `−${D(pv.verba)}`, 'pos'] : null, ['Custo para a prefeitura', D(pv.liquido), 'neg'],
+          ['Público esperado', `~${pv.publico.toLocaleString('pt-BR')} pessoas`], ['Preparação', `${t.prep} dias`], ['Humor dos grupos', gruposTxt(pv.efeitos), 'pos'],
+          t.risco ? ['Risco', 'briga se a segurança da cidade for fraca', 'neg'] : null])}
+        ${pode.ok ? `<div class="evento-acao">${locs.length > 1 ? `<select data-loc="${id}">${locs.map(l => `<option value="${l.loteId}">${esc(l.nome)}</option>`).join('')}</select>` : `<small class="nota">${esc(locs[0].nome)}</small>`}
+          <button class="btn primario" data-agendar="${id}">Agendar para ${Vida.dataDe(Vida.hoje() + t.prep)}</button></div>` : `<small class="alerta">${pode.motivo}</small>`}
+      </div>`;
+    }).join('');
+    const cans = S.eventos.filter(e => e.status === 'feito' && Vida.hoje() - e.dia < 30).length;
+    return {
+      titulo: 'Eventos e shows',
+      html: `${Vida.protestoAtivo() ? `<p class="alerta">Tem protesto na Praça Central agora. <button class="btn btn-p" id="ver-prot">Ver</button></p>` : ''}${hoje ? `<div class="destaque"><div><small>Hoje</small><strong>${TIPOS_EVENTO[hoje.tipo].nome}</strong><span>${esc(hoje.local)} · ${(hoje.publico || 0).toLocaleString('pt-BR')} pessoas</span></div></div>` : ''}
+        <p class="nota">Tudo acontece na Praça Central (os eventos pequenos também podem ir para as praças de bairro). Não precisa de Centro Cultural; com ele, os shows grandes atraem mais gente. As empresas da cidade patrocinam parte do custo.</p>
+        ${cans ? `<p class="alerta">${cans} ${cans === 1 ? 'evento' : 'eventos'} nos últimos 30 dias: o público anima menos com festa toda semana.</p>` : ''}
+        ${agend ? `<h3>Agendados</h3><ul class="futuras">${agend}</ul>` : ''}
+        <h3>Organizar</h3>${cards}
+        ${feitos ? `<h3>Últimos eventos</h3><ul class="futuras">${feitos}</ul>` : ''}`,
+      depois: el => {
+        const vp = el.querySelector('#ver-prot'); if (vp) vp.addEventListener('click', () => irPara({ lote: 'P4' }));
+        el.querySelectorAll('[data-agendar]').forEach(b => b.addEventListener('click', () => {
+          const sel = el.querySelector(`[data-loc="${b.dataset.agendar}"]`);
+          if (Vida.agendar(b.dataset.agendar, sel ? sel.value : null)) { Som.sfx('moeda'); renderPainel(); atualizarHUD(); }
+        }));
       },
     };
   };
@@ -956,14 +1100,8 @@ const UI = (() => {
   }
 
   // ------------------------------------------------------------- toasts
-  function toast(txt, tipo) {
-    const el = document.createElement('div');
-    el.className = 'toast ' + (tipo || '');
-    el.textContent = txt;
-    $('#toasts').appendChild(el);
-    setTimeout(() => el.classList.add('sai'), 3800);
-    setTimeout(() => el.remove(), 4400);
-  }
+  // nada de notificação na tela: tudo vai para a lista de Avisos
+  function toast(txt, tipo) { if (Sim.S) Vida.aviso(txt, tipo); }
 
   // -------------------------------------------------------------- modal
   function modal(html, depois) {
@@ -1145,8 +1283,9 @@ const UI = (() => {
     $('#hud').hidden = false;
     Jogo.velocidade = 1;
     atualizarHUD();
-    toast(`Bem-vindo à prefeitura de ${Sim.S.cidade}! Clique nos lotes para construir.`);
-    if (Sim.S.mesIndex === 0 && Sim.S.dia === 1) setTimeout(() => toast('Arraste o mapa para andar. Roda do mouse ou pinça para zoom.'), 1800);
+    if (Sim.S.mesIndex === 0 && Sim.S.dia === 1 && !(Sim.S.avisos || []).length) {
+      toast(`Bem-vindo à prefeitura de ${Sim.S.cidade}! Clique nos lotes para construir. Arraste o mapa para andar; roda do mouse ou pinça para zoom.`);
+    }
   }
 
   // ------------------------------------------------------------- ligação
@@ -1158,7 +1297,8 @@ const UI = (() => {
       if (painel && painel.tipo === b.dataset.p) fechar(); else abrir(b.dataset.p);
     }));
     $('#fechar-painel').addEventListener('click', fechar);
-    window.addEventListener('resize', posicionarPainel);
+    window.addEventListener('resize', escalaUI);
+    escalaUI();
     document.querySelectorAll('[data-vel]').forEach(b => b.addEventListener('click', () => { Jogo.velocidade = +b.dataset.vel; atualizarHUD(); }));
     $('#pular').addEventListener('click', () => {
       if (!Jogo.rodando()) return;
@@ -1172,6 +1312,8 @@ const UI = (() => {
       if (e.key === 'Escape') { if (modalAberto) return; fechar(); }
       if ((e.key === 'z' || e.key === 'Z') && !modalAberto) { dormir(); return; }
       if ((e.key === 'r' || e.key === 'R') && !modalAberto) { abrir('recursos'); return; }
+      if ((e.key === 'e' || e.key === 'E') && !modalAberto) { abrir('eventos'); return; }
+      if ((e.key === 'v' || e.key === 'V') && !modalAberto) { abrir('avisos'); return; }
       if (e.key === ' ') { e.preventDefault(); Jogo.velocidade = Jogo.velocidade ? 0 : 1; atualizarHUD(); }
       const atalhos = ['licitacoes', 'financas', 'impostos', 'empresas', 'camara', 'promessas', 'populacao', 'regiao', 'ouvidoria', 'jornal'];
       const n = parseInt(e.key, 10);
@@ -1208,6 +1350,10 @@ const UI = (() => {
 
     Sim.on('dia', () => { atualizarHUD(); renderPainelSeVivo(); });
     Sim.on('mudou', () => atualizarHUD());
+    Sim.on('aviso', () => { atualizarHUD(); if (painel && painel.tipo === 'avisos') renderPainelSeVivo(); });
+    Sim.on('evento', () => { atualizarHUD(); if (painel && painel.tipo === 'eventos') renderPainel(); });
+    Sim.on('protesto', () => { atualizarHUD(); if (painel && (painel.tipo === 'praca' || painel.tipo === 'eventos')) renderPainel(); });
+    Sim.on('ocorrencia', () => { if (painel && (painel.tipo === 'ocorrencia' || painel.tipo === 'avisos')) renderPainel(); });
     Sim.on('mes', j => { atualizarHUD(); if (painel && PAINEIS_MENSAIS.includes(painel.tipo)) renderPainel(); if (j) mostrarJornal(j); });
     Sim.on('votacao', r => mostrarVotacao(r));
     Sim.on('eleicao', r => { mostrarEleicao(r); atualizarHUD(); });
@@ -1226,7 +1372,10 @@ const UI = (() => {
   function novaVoz(msg) { atualizarHUD(); Som.sfx('balao'); }
 
   return {
-    init, toast, corDaHora, abrirLote: id => abrir('lote', id), abrirBairro: id => abrir('bairro', id), abrirVoz, novaVoz,
+    init, toast, corDaHora,
+    abrirOcorrencia: id => abrir('ocorrencia', id),
+    abrirPraca: () => abrir('praca'),
+    abrirNegociacao: id => { const p = Sim.S.propostas.find(x => x.id === id); if (p) mesaNegociacao(p); }, abrirLote: id => abrir('lote', id), abrirBairro: id => abrir('bairro', id), abrirVoz, novaVoz,
     bloqueado: () => modalAberto || !$('#inicio').hidden,
     modalAberto: () => modalAberto,
     painelAberto: () => painel && painel.tipo,

@@ -108,8 +108,9 @@ const LOTES_INICIAIS = [
   // prédios que já existem no começo
   { id: 'P1', x: 40, y: 17, bairro: 'centro',   ocupado: 'prefeitura' },
   { id: 'P2', x: 43, y: 17, bairro: 'centro',   ocupado: 'camara' },
-  { id: 'P3', x: 29, y: 17, bairro: 'centro',   ocupado: 'igreja' },
-  { id: 'P4', x: 33, y: 17, bairro: 'centro',   ocupado: 'praca' },
+  { id: 'P3', x: 29, y: 6,  bairro: 'centro',   ocupado: 'igreja' },
+  // a Praça Central ocupa um quarteirão inteiro, de frente para a igreja e ao lado da prefeitura
+  { id: 'P4', x: 28, y: 10, w: 9, h: 10, bairro: 'centro', ocupado: 'praca', central: true },
   { id: 'P5', x: 29, y: 22, bairro: 'centro',   ocupado: 'escola' },
   { id: 'P6', x: 33, y: 22, bairro: 'centro',   ocupado: 'ubs' },
   { id: 'P7', x: 40, y: 22, bairro: 'centro',   ocupado: 'creche' },

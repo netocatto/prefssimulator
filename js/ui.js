@@ -716,12 +716,9 @@ const UI = (() => {
   function receitaEmpresa(e) {
     const c = Empresas.cat(e.catId), S = Sim.S;
     if (e.status !== 'operando') return 0;
-    const iss = c.iss * (Empresas.isento(e, 'iss') ? 0.02 : S.impostos.iss / 100);
+    const iss = c.iss * Empresas.aliquotaISS(e) / 100;
     let iptu = 0;
-    if (!Empresas.isento(e, 'iptu') && e.bairro !== 'rural') {
-      const rate = ['industria', 'logistica', 'energia'].includes(c.setor) || e.bairro === 'distrito' ? S.impostos.iptuInd : S.impostos.iptu[e.bairro];
-      iptu = c.venal * rate / 100 / 12;
-    }
+    if (e.bairro !== 'rural') iptu = c.venal * Empresas.taxaIPTU(c, e.bairro) / 100 / 12 * Empresas.fatorIPTU(e);
     return iss + c.icms + iptu;
   }
   function nomeLocal(e) { return e.bairro === 'rural' ? 'Zona rural' : e.pequeno || !e.loteId ? `Ponto comercial · ${Sim.bairroById(e.bairro).nome}` : `Lote ${e.loteId} · ${Sim.bairroById(e.bairro).nome}`; }
@@ -755,9 +752,11 @@ const UI = (() => {
       const c = Empresas.cat(e.catId);
       const prog = e.status === 'instalacao' ? Math.round((1 - e.mesesRest / e.mesesTotal) * 100) : null;
       const inc = [];
-      if (e.incentivos.iptuAnos) inc.push(`IPTU isento ${e.incentivos.iptuAnos} anos`);
-      if (e.incentivos.issAnos) inc.push(`ISS 2% por ${e.incentivos.issAnos} anos`);
-      if (e.incentivos.doacao) inc.push('terreno doado');
+      const ii = e.incentivos;
+      if (ii.iptuAnos) inc.push(`${ii.iptuPct == null || ii.iptuPct >= 1 ? 'IPTU isento' : Math.round(ii.iptuPct * 100) + '% off no IPTU'} por ${ii.iptuAnos} anos`);
+      if (ii.issAnos) inc.push(`ISS ${String(ii.issTaxa || 2).replace('.', ',')}% por ${ii.issAnos} anos`);
+      if (ii.doacao) inc.push('terreno doado'); else if (ii.terrenoDesc) inc.push(`terreno com ${Math.round(ii.terrenoDesc * 100)}% de desconto`);
+      if (ii.itbiPct) inc.push(ii.itbiPct >= 1 ? 'ITBI isento' : `ITBI com ${Math.round(ii.itbiPct * 100)}% off`);
       if (e.incentivos.infra) inc.push(`obras ${D(e.incentivos.infra)}`);
       return `<div class="emp-card">
         <div class="emp-top"><span class="logo-emp" style="background:${c.cor}">${c.nome[0]}</span><div><b>${esc(c.nome)}</b><small>${nomeLocal(e)} · ${num(c.empregos)} empregos</small></div>${tag(STATUS_EMP[e.status])}</div>
@@ -787,28 +786,57 @@ const UI = (() => {
     };
   };
 
+  // um item negociável da mesa: botões por parte (desconto, prazo, alíquota, valor)
+  function blocoPedido(p, ped, i, l) {
+    const d = PEDIDOS_EMPRESA[ped.tipo], S = Sim.S, v = ped.dado || {};
+    const op = (campo, val, txt, sel) => `<button class="op ${sel ? 'sel' : ''}" data-ped="${i}" data-campo="${campo}" data-v="${val}">${txt}</button>`;
+    const pct = x => Math.round(x * 100) + '%';
+    const prazo = ativo => `<div class="linha-op"><span>Prazo</span><div class="ops"><button class="op mini-op" data-ped="${i}" data-delta="-1" ${ativo && v.anos > 1 ? '' : 'disabled'}>−</button><b class="anos">${ativo ? v.anos + (v.anos === 1 ? ' ano' : ' anos') : '—'}</b><button class="op mini-op" data-ped="${i}" data-delta="1" ${ativo ? '' : 'disabled'}>+</button></div></div>`;
+    let corpo = '';
+    switch (ped.tipo) {
+      case 'isencaoIPTU':
+        corpo = `<div class="linha-op"><span>Desconto</span><div class="ops">${OPCOES_NEG.pct.map(x => op('pct', x, x ? (x >= 1 ? 'Isento' : pct(x)) : 'Nenhum', Math.abs((v.pct || 0) - x) < 1e-6)).join('')}</div></div>${prazo(v.pct > 0)}`;
+        break;
+      case 'reducaoISS': {
+        const taxas = OPCOES_NEG.taxasISS.filter(t => t < S.impostos.iss).sort((a, b) => b - a);
+        corpo = `<div class="linha-op"><span>Alíquota</span><div class="ops">${op('taxa', 'null', `Normal (${String(S.impostos.iss).replace('.', ',')}%)`, !v.taxa || !v.anos || v.taxa >= S.impostos.iss)}${taxas.map(t => op('taxa', t, String(t).replace('.', ',') + '%', v.taxa === t && v.anos > 0)).join('')}</div></div>${prazo(v.taxa && v.anos > 0)}`;
+        break;
+      }
+      case 'doacaoTerreno': {
+        if (!Empresas.pedidoAplica(p, ped)) return `<div class="ped"><b>${d.nome}</b><small>${l ? 'Terreno particular: a empresa compra direto do dono.' : 'Não usa terreno público.'}</small></div>`;
+        const valor = VALOR_LOTE[l.bairro] || 1e6;
+        corpo = `<div class="linha-op"><span>Preço</span><div class="ops">${OPCOES_NEG.terreno.map(x => op('pct', x, x >= 1 ? 'Doar' : x ? `${pct(x)} off (${D(valor * (1 - x))})` : `Cheio (${D(valor)})`, Math.abs((v.pct || 0) - x) < 1e-6)).join('')}</div></div>`;
+        break;
+      }
+      case 'infra': {
+        const vals = Empresas.opcoesDe(p, ped).map(x => x.valor);
+        corpo = `<div class="linha-op"><span>Valor</span><div class="ops">${[...new Set(vals)].map(x => op('valor', x, x ? D(x) : 'Não', (v.valor || 0) === x)).join('')}</div></div>`;
+        break;
+      }
+      case 'isencaoITBI':
+        corpo = `<div class="linha-op"><span>Desconto</span><div class="ops">${OPCOES_NEG.itbi.map(x => op('pct', x, x >= 1 ? 'Isento' : x ? pct(x) : 'Cheio', Math.abs((v.pct || 0) - x) < 1e-6)).join('')}</div></div>`;
+        break;
+    }
+    const at = Empresas.atendido(ped), atPct = Math.round(at * 100);
+    const nivel = ped.peso >= 1.5 ? 'ess' : ped.peso >= 1 ? 'imp' : 'des';
+    const topo = ped.extra
+      ? `<div class="ped-top"><b>${d.nome}</b><span class="pri pri-extra">Oferta extra</span><button class="op mini-op" data-tirar="${ped.tipo}" title="Retirar">✕</button></div><small>A empresa não pediu isto; ajuda um pouco.</small>`
+      : `<div class="ped-top"><b>${d.nome}</b><span class="pri pri-${nivel}">${Empresas.PRIORIDADES[ped.peso]}</span></div><small>Pedem: ${Empresas.descPedido(ped.tipo, ped.pedido)} · você oferece: <b>${Empresas.descPedido(ped.tipo, ped.dado)}</b></small>`;
+    const medidor = ped.extra ? '' : `<div class="atende"><i><b style="width:${Math.min(100, atPct)}%;background:${at >= 0.999 ? 'var(--verde)' : at >= 0.5 ? 'var(--ouro)' : 'var(--vermelho)'}"></b></i><small>${atPct >= 100 ? (atPct > 100 ? 'Mais do que pediram' : 'Atende o pedido') : `Atende ${atPct}% do pedido`}</small></div>`;
+    return `<div class="ped ${ped.extra ? 'extra' : ''}">${topo}${corpo}${medidor}</div>`;
+  }
+
   // mesa de negociação
   function mesaNegociacao(p, estado) {
     const c = Empresas.cat(p.catId), S = Sim.S;
     const render = () => {
       const av = Empresas.avaliar(p);
       const l = Empresas.loteDe(p);
-      const pedidos = p.pedidos.map((ped, i) => {
-        const d = PEDIDOS_EMPRESA[ped.tipo];
-        let ops = '';
-        if (d.anos) {
-          const opcoes = [0, ...[2, 5, 10].filter(a => a <= ped.pedido)];
-          ops = opcoes.map(a => `<button class="op ${ped.dado === a ? 'sel' : ''}" data-ped="${i}" data-v="${a}">${a ? a + ' anos' : 'Não'}</button>`).join('');
-        } else if (ped.tipo === 'infra') {
-          ops = [[ped.pedido, 'Pagar ' + D(ped.pedido)], [Math.round(ped.pedido / 2 / 1e4) * 1e4, 'Metade'], [0, 'Não']].map(([v, t]) => `<button class="op ${ped.dado === v ? 'sel' : ''}" data-ped="${i}" data-v="${v}">${t}</button>`).join('');
-        } else if (ped.tipo === 'doacaoTerreno') {
-          if (!Empresas.pedidoAplica(p, ped)) return `<div class="ped"><b>${d.nome}</b><small>Terreno particular: a empresa compra direto do dono.</small></div>`;
-          ops = `<button class="op ${ped.dado ? 'sel' : ''}" data-ped="${i}" data-v="1">Doar</button><button class="op ${!ped.dado ? 'sel' : ''}" data-ped="${i}" data-v="0">Vender por ${D(VALOR_LOTE[l.bairro])}</button>`;
-        } else {
-          ops = `<button class="op ${ped.dado ? 'sel' : ''}" data-ped="${i}" data-v="1">Conceder</button><button class="op ${!ped.dado ? 'sel' : ''}" data-ped="${i}" data-v="0">Não</button>`;
-        }
-        return `<div class="ped"><b>${d.nome}</b><small>Pedem: ${Empresas.descPedido(ped.tipo, ped.pedido)}</small><div class="ops">${ops}</div></div>`;
-      }).join('');
+      Empresas.migrarProposta(p);
+      const pedidos = p.pedidos.map((ped, i) => blocoPedido(p, ped, i, l)).join('');
+      const tiposExtra = Object.keys(PEDIDOS_EMPRESA).filter(t => !p.pedidos.some(x => x.tipo === t) && !(t === 'doacaoTerreno' && !(l && l.tipo === 'publico')));
+      const extras = tiposExtra.length ? `<div class="extras"><small>Oferecer também (a empresa não pediu, vale menos para ela):</small><div class="ops">${tiposExtra.map(t => `<button class="op" data-extra="${t}">+ ${PEDIDOS_EMPRESA[t].nome}</button>`).join('')}</div></div>` : '';
+      const prios = p.pedidos.filter(x => !x.extra).slice().sort((a, b) => b.peso - a.peso).map(x => `<span class="pri pri-${x.peso >= 1.5 ? 'ess' : x.peso >= 1 ? 'imp' : 'des'}">${PEDIDOS_EMPRESA[x.tipo].curto}: ${Empresas.PRIORIDADES[x.peso]}</span>`).join('');
       const cps = Object.entries(CONTRAPARTIDAS).filter(([id, cp]) => !cp.soPoluente || c.poluicao).map(([id, cp]) =>
         `<button class="cp ${p.exigidas.includes(id) ? 'sel' : ''}" data-cp="${id}" aria-pressed="${p.exigidas.includes(id)}"><b>${cp.nome}</b><small>${cp.desc}</small></button>`).join('');
       const lotes = Empresas.lotesCompativeis(c.local).concat(l && !Empresas.lotesCompativeis(c.local).includes(l) ? [l] : []);
@@ -825,7 +853,7 @@ const UI = (() => {
         ${p.rival ? `<p class="alerta">${p.rival.nome} está oferecendo condições melhores. A empresa vai pedir mais.</p>` : ''}
         <div class="falas">${falas}</div>
         <div class="mesa-cols">
-          <section><h3>A empresa pede</h3>${pedidos}${selLote}</section>
+          <section><h3>A empresa pede</h3><div class="prios"><small>O que mais importa para eles:</small>${prios}</div>${pedidos}${extras}${selLote}</section>
           <section><h3>A prefeitura exige em troca</h3><div class="cps-grid">${cps}</div></section>
         </div>
         <div class="termo"><span>Clima da negociação</span><div class="segs">${segs}</div><b>${av.termo.txt}</b></div>
@@ -837,11 +865,24 @@ const UI = (() => {
           ${av.vendaLote ? `<span>Venda do terreno <b class="pos">+${D(av.vendaLote)}</b></span>` : ''}
           <span>Câmara ${av.precisaCamara ? `<b class="${votos >= 6 ? 'pos' : 'neg'}">~${votos} votos a favor</b> <small>(precisa de 6)</small>` : '<b>não precisa votar</b>'}</span>
         </div>
-        <div class="acoes"><button class="btn primario" id="propor">Apresentar proposta</button><button class="btn" id="depois">Pensar depois</button><button class="btn" id="recusar">Recusar a empresa</button></div>
+        ${p._sug ? `<div class="sugestao"><span>Sugestão da empresa: <b>${p._sug.map(x => esc(Empresas.descPedido(x.tipo, x.v))).join(' + ')}</b></span><button class="btn ouro" id="usar-sug">Colocar na proposta</button></div>` : ''}
+        <div class="acoes"><button class="btn primario" id="propor">Apresentar proposta</button><button class="btn" id="sondar" ${p.sondagens > 0 ? '' : 'disabled'} title="A empresa diz o que falta para fechar. Não gasta paciência.">Perguntar o que falta (${p.sondagens})</button><button class="btn" id="depois">Pensar depois</button><button class="btn" id="recusar">Recusar a empresa</button></div>
       </div>`;
     };
     const ligar = el => {
-      el.querySelectorAll('[data-ped]').forEach(b => b.addEventListener('click', () => { p.pedidos[+b.dataset.ped].dado = +b.dataset.v; atualizar(el); }));
+      el.querySelectorAll('[data-ped]').forEach(b => b.addEventListener('click', () => {
+        const ped = p.pedidos[+b.dataset.ped], campo = b.dataset.campo;
+        const d = { ...ped.dado };
+        if (b.dataset.delta) d.anos = Math.max(1, Math.min(Math.max(10, ped.pedido.anos || 0), (d.anos || 0) + +b.dataset.delta));
+        else d[campo] = b.dataset.v === 'null' ? null : +b.dataset.v;
+        if (ped.tipo === 'isencaoIPTU') { if (!d.pct) d.anos = 0; else if (!d.anos) d.anos = ped.pedido.anos || 2; }
+        if (ped.tipo === 'reducaoISS') { if (!d.taxa) d.anos = 0; else if (!d.anos) d.anos = ped.pedido.anos || 2; }
+        ped.dado = d; p._sug = null; atualizar(el);
+      }));
+      el.querySelectorAll('[data-extra]').forEach(b => b.addEventListener('click', () => { Empresas.oferecerExtra(p, b.dataset.extra); atualizar(el); }));
+      el.querySelectorAll('[data-tirar]').forEach(b => b.addEventListener('click', () => { Empresas.removerExtra(p, b.dataset.tirar); atualizar(el); }));
+      const so = el.querySelector('#sondar'); if (so) so.addEventListener('click', () => { const r = Empresas.sondar(p); p._sug = r.sugestao || null; atualizar(el); });
+      const us = el.querySelector('#usar-sug'); if (us) us.addEventListener('click', () => { for (const sg of p._sug) { const ped = p.pedidos.find(x => x.tipo === sg.tipo); if (ped) ped.dado = { ...sg.v }; } p._sug = null; atualizar(el); });
       el.querySelectorAll('[data-cp]').forEach(b => b.addEventListener('click', () => {
         const id = b.dataset.cp; p.exigidas = p.exigidas.includes(id) ? p.exigidas.filter(x => x !== id) : [...p.exigidas, id]; atualizar(el);
       }));

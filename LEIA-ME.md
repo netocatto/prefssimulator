@@ -1,4 +1,4 @@
-# Prefeito — versão 0.7.1
+# Prefeito — versão 0.8
 
 Jogo de gestão pública em pixel art no estilo "fazendinha" (alta resolução). Você é prefeito de uma cidade de 25 mil habitantes no interior paulista e precisa se reeleger a cada 2 anos.
 
@@ -21,6 +21,13 @@ A fonte dos textos (Nunito) vem junto, na pasta `fonts`, e funciona sem internet
 
 ## O que já existe
 
+- **v0.8, negociação flexível com empresas:**
+  - Cada pedido é negociado em partes: IPTU com desconto de 25%, 50%, 80% ou isenção, e prazo de 1 a 10 anos; ISS com alíquota de 4%, 3%, 2,5% ou 2%, e prazo; terreno público pelo preço cheio, com 25%, 50% ou 75% de desconto, ou doado; obras de acesso de 25% a 125% do valor pedido; ITBI com 50% de desconto ou isento.
+  - Prioridades: cada empresa mostra o que é Essencial, Importante ou Desejável para ela. Ceder no que é essencial vale mais; o que passa do pedido vale só metade.
+  - Barra "Atende X% do pedido" em cada item.
+  - Ofertas extras: dá para oferecer algo que a empresa não pediu (vale menos, mas ajuda).
+  - **Perguntar o que falta** (2 vezes por negociação, sem gastar paciência): a empresa diz o que precisaria para fechar, e um botão coloca a sugestão na proposta.
+  - Contrapropostas concretas: a empresa responde com valores no meio do caminho, por exemplo "80% de desconto no IPTU por 3 anos".
 - **v0.7.1:** fonte nova e mais legível (Nunito) e jogo mais leve: menos nuvens, carros e pedestres, no máximo 60 quadros por segundo, luz do dia sem efeito de mistura pesado e pedido de placa de vídeo dedicada quando houver.
 - **Novo na v0.7:**
   - Menu de jogos salvos: vários jogos ao mesmo tempo, com cidade, prefeito, data, dificuldade e aprovação. Jogar ou apagar (pede confirmação).

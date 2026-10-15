@@ -149,14 +149,25 @@ const CONTRAPARTIDAS = {
   ambiental: { nome: 'Filtros e compensação ambiental', custo: 10, prazo: 0, desc: 'Reduz bastante a poluição.', soPoluente: true },
 };
 
-// O que a empresa pode pedir
+// O que a empresa pode pedir. Cada item é negociável em partes:
+//  IPTU: % de desconto × anos · ISS: alíquota × anos · terreno: % de desconto no preço
+//  obras: valor · ITBI: % de desconto. "prioridade" = quanto aquilo pesa para a empresa.
 const PEDIDOS_EMPRESA = {
-  isencaoIPTU:   { nome: 'Isenção de IPTU', anos: true, pts: a => a * 3, fiscal: true },
-  reducaoISS:    { nome: 'ISS reduzido para 2%', anos: true, pts: a => a * 3, fiscal: true },
-  doacaoTerreno: { nome: 'Doação do terreno', pts: () => 16, fiscal: true },
-  infra:         { nome: 'Obras de acesso, asfalto e redes', pts: v => v / 1e5 },
-  isencaoITBI:   { nome: 'Isenção do ITBI na compra', pts: () => 3, fiscal: true },
+  isencaoIPTU:   { nome: 'Desconto no IPTU', curto: 'IPTU', fiscal: true },
+  reducaoISS:    { nome: 'ISS reduzido', curto: 'ISS', fiscal: true },
+  doacaoTerreno: { nome: 'Terreno público', curto: 'terreno', fiscal: true },
+  infra:         { nome: 'Obras de acesso, asfalto e redes', curto: 'obras' },
+  isencaoITBI:   { nome: 'Desconto no ITBI', curto: 'ITBI', fiscal: true },
 };
+const OPCOES_NEG = {
+  pct: [0, 0.25, 0.5, 0.8, 1],            // desconto de IPTU
+  terreno: [0, 0.25, 0.5, 0.75, 1],       // desconto no preço do terreno (1 = doação)
+  itbi: [0, 0.5, 1],
+  infra: [0, 0.25, 0.5, 0.75, 1, 1.25],   // fração do valor pedido
+  taxasISS: [2, 2.5, 3, 4],
+  anosMax: 10,
+};
+const PRIORIDADES = { 1.5: 'Essencial', 1: 'Importante', 0.6: 'Desejável', 0.5: 'Extra' };
 
 const VALOR_LOTE = { centro: 1.5e6, operaria: 0.6e6, nobre: 2.2e6, distrito: 0.8e6 };
 
@@ -176,6 +187,7 @@ const Empresas = (() => {
     if (s.proxProposta == null) s.proxProposta = s.mesIndex;
     if (s.prospeccao == null) s.prospeccao = -99;
     if (!s.cobrancas) s.cobrancas = [];
+    for (const p of s.propostas) migrarProposta(p);
   }
 
   // ------------------------------------------------------------ catálogo
@@ -206,7 +218,7 @@ const Empresas = (() => {
     // a empresa prefere terreno público (para pedir doação) quando pede doação
     let lote = null;
     if (lotes.length) lote = (c.pede.doacaoTerreno ? lotes.find(l => l.tipo === 'publico') : null) || lotes[0];
-    const pedidos = Object.entries(c.pede).map(([tipo, v]) => ({ tipo, pedido: v, dado: v }));
+    const pedidos = montarPedidos(c);
     const rivalCidade = Math.random() < 0.35 ? s.rivais[Math.floor(Math.random() * s.rivais.length)] : null;
     const p = {
       id: 'p' + (uid++), catId: c.id, nome: c.nome, setor: c.setor, empregos: c.empregos,
@@ -215,7 +227,7 @@ const Empresas = (() => {
       interesse: 50, paciencia: 3, ruido: Math.round(rnd(-3, 3)),
       rival: rivalCidade ? { id: rivalCidade.id, nome: rivalCidade.nome } : null,
       chegou: s.mesIndex, expira: s.mesIndex + (rivalCidade ? 2 : 3),
-      falas: [{ quem: 'empresa', txt: abertura(c, rivalCidade) }],
+      falas: [{ quem: 'empresa', txt: abertura(c, rivalCidade, pedidos) }], sondagens: 2,
     };
     s.propostas.push(p);
     Sim.noticia(5, `${c.nome} quer se instalar na cidade e promete ${c.empregos} empregos`, rivalCidade ? `${rivalCidade.nome} também está na disputa` : SETORES[c.setor]);
@@ -230,40 +242,103 @@ const Empresas = (() => {
     for (let i = 0; i < op.length; i++) { r -= pesos[i]; if (r <= 0) return op[i]; }
     return 'centro';
   }
-  function abertura(c, rival) {
-    const pedidos = Object.entries(c.pede).map(([t, v]) => descPedido(t, v)).join(', ');
-    let t = `Bom dia, prefeito. Queremos investir ${Sim.fmtDinheiro(c.invest)} e gerar ${c.empregos} empregos aqui. Para isso, precisamos de: ${pedidos}.`;
+  // pedidos no formato negociável, com prioridade para a empresa
+  function normalizar(tipo, v) {
+    switch (tipo) {
+      case 'isencaoIPTU': return { pct: 1, anos: v };
+      case 'reducaoISS': return { taxa: 2, anos: v };
+      case 'doacaoTerreno': return { pct: 1 };
+      case 'infra': return { valor: v };
+      case 'isencaoITBI': return { pct: 1 };
+    }
+  }
+  function vazio(tipo) {
+    switch (tipo) {
+      case 'isencaoIPTU': return { pct: 0, anos: 0 };
+      case 'reducaoISS': return { taxa: null, anos: 0 };
+      case 'infra': return { valor: 0 };
+      default: return { pct: 0 };
+    }
+  }
+  function montarPedidos(c) {
+    const lista = Object.entries(c.pede).map(([tipo, v]) => ({ tipo, pedido: normalizar(tipo, v), peso: 1 }));
+    lista.forEach(x => x.dado = { ...x.pedido });
+    // o item mais valioso (com um pouco de sorte) é o essencial; os outros, importantes ou desejáveis
+    const ordem = lista.slice().sort((a, b) => ptsBruto(b.tipo, b.pedido) * rnd(0.6, 1.4) - ptsBruto(a.tipo, a.pedido) * rnd(0.6, 1.4));
+    ordem.forEach((x, i) => x.peso = i === 0 ? 1.5 : (i === 1 || Math.random() < 0.4) ? 1 : 0.6);
+    return lista;
+  }
+  // pedidos antigos (jogos salvos antes da v0.8) viram o formato novo
+  function migrarProposta(p) {
+    for (const ped of p.pedidos) {
+      if (ped.pedido && typeof ped.pedido === 'object') continue;
+      ped.pedido = normalizar(ped.tipo, ped.pedido === true ? 1 : ped.pedido);
+      ped.dado = ped.dado ? { ...ped.pedido } : vazio(ped.tipo);
+      ped.peso = ped.peso || 1;
+    }
+    if (p.sondagens == null) p.sondagens = 2;
+  }
+  function abertura(c, rival, pedidos) {
+    const lista = (pedidos || montarPedidos(c));
+    const desc = lista.map(x => descPedido(x.tipo, x.pedido)).join(', ');
+    const ess = lista.find(x => x.peso >= 1.5);
+    let t = `Bom dia, prefeito. Queremos investir ${Sim.fmtDinheiro(c.invest)} e gerar ${c.empregos} empregos aqui. Para isso, precisamos de: ${desc}.`;
+    if (ess && lista.length > 1) t += ` O que mais pesa para nós é ${minus(PEDIDOS_EMPRESA[ess.tipo].nome)}; o resto dá para conversar.`;
     if (rival) t += ` Serei franco: ${rival.nome} nos ofereceu condições muito boas.`;
     return t;
   }
+  const minus = t => t[0].toLowerCase() + t.slice(1);
+  const pctTxt = v => Math.round(v * 100) + '%';
   function descPedido(tipo, v) {
-    const d = PEDIDOS_EMPRESA[tipo];
-    if (d.anos) return `${d.nome.toLowerCase()} por ${v} anos`;
-    if (tipo === 'infra') return `${d.nome.toLowerCase()} (${Sim.fmtDinheiro(v)})`;
-    return d.nome.toLowerCase();
+    if (v == null || typeof v !== 'object') v = normalizar(tipo, v === true ? 1 : v);
+    switch (tipo) {
+      case 'isencaoIPTU': return !v.pct || !v.anos ? 'IPTU cheio' : v.pct >= 1 ? `isenção de IPTU por ${v.anos} ${v.anos === 1 ? 'ano' : 'anos'}` : `${pctTxt(v.pct)} de desconto no IPTU por ${v.anos} ${v.anos === 1 ? 'ano' : 'anos'}`;
+      case 'reducaoISS': return !v.taxa || !v.anos ? 'ISS normal' : `ISS de ${String(v.taxa).replace('.', ',')}% por ${v.anos} ${v.anos === 1 ? 'ano' : 'anos'}`;
+      case 'doacaoTerreno': return !v.pct ? 'terreno pelo preço cheio' : v.pct >= 1 ? 'doação do terreno' : `${pctTxt(v.pct)} de desconto no terreno`;
+      case 'infra': return !v.valor ? 'sem obras pagas pela prefeitura' : `obras de acesso (${Sim.fmtDinheiro(v.valor)})`;
+      case 'isencaoITBI': return !v.pct ? 'ITBI cheio' : v.pct >= 1 ? 'isenção do ITBI' : `${pctTxt(v.pct)} de desconto no ITBI`;
+    }
+    return '';
   }
 
   // ------------------------------------------------------------ avaliação
   function loteDe(p) { return p.loteId ? S().lotes.find(l => l.id === p.loteId) : null; }
   function pedidoAplica(p, ped) {
     if (ped.tipo === 'doacaoTerreno') { const l = loteDe(p); return !!(l && l.tipo === 'publico'); }
-    if (ped.tipo === 'isencaoITBI') return true;
     return true;
   }
-  function ptsPedido(ped, valor) {
-    const d = PEDIDOS_EMPRESA[ped.tipo];
-    if (!valor) return 0;
-    if (d.anos) return d.pts(valor);
-    if (ped.tipo === 'infra') return d.pts(valor);
-    return d.pts();
+  // quanto um item vale para a empresa (pontos de negociação), sem a prioridade
+  function ptsBruto(tipo, v) {
+    if (!v || typeof v !== 'object') return 0;
+    switch (tipo) {
+      case 'isencaoIPTU': return (v.pct || 0) * (v.anos || 0) * 3;
+      case 'reducaoISS': {
+        const iss = S() ? S().impostos.iss : 4;
+        if (!v.taxa || !v.anos || v.taxa >= iss) return 0;
+        return Math.min(1, (iss - v.taxa) / Math.max(0.5, iss - 2)) * v.anos * 3;
+      }
+      case 'doacaoTerreno': return (v.pct || 0) * 16;
+      case 'infra': return (v.valor || 0) / 1e5;
+      case 'isencaoITBI': return (v.pct || 0) * 3;
+    }
+    return 0;
   }
+  // o que passa do pedido vale metade; itens que a empresa nem pediu valem pouco
+  function ptsItem(ped, v) {
+    const pedido = ptsBruto(ped.tipo, ped.pedido), dado = ptsBruto(ped.tipo, v === undefined ? ped.dado : v);
+    return (Math.min(dado, pedido) + Math.max(0, dado - pedido) * 0.5) * (ped.peso || 1);
+  }
+  function ptsPedido(ped, valor) { return ptsBruto(ped.tipo, valor); }
+  // quanto do pedido está atendido (0 a 1+)
+  function atendido(ped) { const t = ptsBruto(ped.tipo, ped.pedido); return t ? ptsBruto(ped.tipo, ped.dado) / t : (ptsBruto(ped.tipo, ped.dado) ? 1 : 0); }
   function avaliar(p) {
     const c = cat(p.catId);
     let total = 0, dado = 0;
+    migrarProposta(p);
     for (const ped of p.pedidos) {
       if (!pedidoAplica(p, ped)) continue;
-      total += ptsPedido(ped, ped.pedido);
-      dado += ptsPedido(ped, ped.dado);
+      total += ptsBruto(ped.tipo, ped.pedido) * (ped.peso || 1);
+      dado += ptsItem(ped);
     }
     const mult = multCusto(c.empregos);
     const custo = p.exigidas.reduce((s, id) => s + CONTRAPARTIDAS[id].custo * mult, 0);
@@ -284,22 +359,25 @@ const Empresas = (() => {
   function impacto(p) {
     const c = cat(p.catId), s = S();
     const l = loteDe(p);
-    const iptuIsento = valorDado(p, 'isencaoIPTU') > 0, issRed = valorDado(p, 'reducaoISS') > 0;
+    const ip = dadoDe(p, 'isencaoIPTU'), is = dadoDe(p, 'reducaoISS'), ter = dadoDe(p, 'doacaoTerreno'), inf = dadoDe(p, 'infra');
     const issNormal = c.iss * s.impostos.iss / 100;
-    const iss = issRed ? c.iss * 0.02 : issNormal;
+    const iss = is && is.taxa && is.anos && is.taxa < s.impostos.iss ? c.iss * is.taxa / 100 : issNormal;
     const iptuRate = taxaIPTU(c, l ? l.bairro : p.bairro || null);
-    const iptu = iptuIsento ? 0 : c.venal * iptuRate / 100 / 12;
-    let custoUnico = valorDado(p, 'infra') || 0;
+    const iptuCheio = c.venal * iptuRate / 100 / 12;
+    const iptu = iptuCheio * (1 - (ip && ip.anos ? ip.pct || 0 : 0));
+    const custoUnico = inf ? inf.valor || 0 : 0;
     let vendaLote = 0;
-    if (l && l.tipo === 'publico' && !valorDado(p, 'doacaoTerreno')) vendaLote = VALOR_LOTE[l.bairro] || 1e6;
+    if (l && l.tipo === 'publico') vendaLote = Math.round((VALOR_LOTE[l.bairro] || 1e6) * (1 - (ter ? ter.pct || 0 : 0)));
     const local = p.exigidas.includes('maoDeObra') ? 0.85 : 0.55;
     return {
-      receitaMes: iss + c.icms + iptu, receitaMesCheia: issNormal + c.icms + c.venal * iptuRate / 100 / 12,
+      receitaMes: iss + c.icms + iptu, receitaMesCheia: issNormal + c.icms + iptuCheio,
       custoUnico, vendaLote, empregosLocais: Math.round(c.empregos * local),
-      precisaCamara: p.pedidos.some(ped => PEDIDOS_EMPRESA[ped.tipo].fiscal && ped.dado && pedidoAplica(p, ped)),
+      precisaCamara: p.pedidos.some(ped => PEDIDOS_EMPRESA[ped.tipo].fiscal && pedidoAplica(p, ped) && ptsBruto(ped.tipo, ped.dado) > 0),
     };
   }
-  function valorDado(p, tipo) { const ped = p.pedidos.find(x => x.tipo === tipo); return ped && pedidoAplica(p, ped) ? ped.dado : 0; }
+  function dadoDe(p, tipo) { const ped = p.pedidos.find(x => x.tipo === tipo); return ped && pedidoAplica(p, ped) ? ped.dado : null; }
+  // mantido para compatibilidade: valor numérico simples do que foi concedido
+  function valorDado(p, tipo) { const d = dadoDe(p, tipo); return d ? ptsBruto(tipo, d) : 0; }
   function taxaIPTU(c, bairro) {
     if (!bairro) return 0;
     if (['industria', 'logistica', 'energia'].includes(c.setor) || bairro === 'distrito') return S().impostos.iptuInd;
@@ -330,11 +408,12 @@ const Empresas = (() => {
     }
     // incentivos: "o pequeno paga imposto, o grande não"
     let pts = 0, infra = 0, doacao = false;
+    migrarProposta(p);
     for (const ped of p.pedidos) {
-      if (!pedidoAplica(p, ped) || !ped.dado) continue;
-      if (ped.tipo === 'infra') infra = ped.dado;
-      else if (ped.tipo === 'doacaoTerreno') doacao = true;
-      else pts += ptsPedido(ped, ped.dado);
+      if (!pedidoAplica(p, ped) || !ptsBruto(ped.tipo, ped.dado)) continue;
+      if (ped.tipo === 'infra') infra = ped.dado.valor || 0;
+      else if (ped.tipo === 'doacaoTerreno') { pts += (ped.dado.pct || 0) * 10; doacao = (ped.dado.pct || 0) >= 1; }
+      else pts += ptsBruto(ped.tipo, ped.dado);
     }
     const inc = pts * 0.35 + (doacao ? 5 : 0) + infra / 1e6 * 2.5;
     if (inc > 0.5) {
@@ -389,9 +468,13 @@ const Empresas = (() => {
         p.exigidas = p.exigidas.filter(x => x !== cara);
         p.falas.push({ quem: 'empresa', txt: `Não conseguimos assumir "${CONTRAPARTIDAS[cara].nome.toLowerCase()}". Tirando isso, podemos conversar.` });
       } else {
-        const neg = p.pedidos.filter(x => pedidoAplica(p, x) && x.dado !== x.pedido).sort((a, b) => ptsPedido(b, b.pedido) - ptsPedido(a, a.pedido))[0];
-        if (neg) { neg.dado = neg.pedido; p.falas.push({ quem: 'empresa', txt: `Sem ${descPedido(neg.tipo, neg.pedido)} não fecha a conta. É o nosso limite.` }); }
-        else p.falas.push({ quem: 'empresa', txt: 'Precisamos de um gesto da prefeitura. Pense melhor.' });
+        // contraproposta concreta no item que mais pesa e está mais longe do pedido
+        const alvo = p.pedidos.filter(x => pedidoAplica(p, x) && atendido(x) < 0.999)
+          .sort((a, b) => (ptsBruto(b.tipo, b.pedido) - ptsBruto(b.tipo, b.dado)) * b.peso - (ptsBruto(a.tipo, a.pedido) - ptsBruto(a.tipo, a.dado)) * a.peso)[0];
+        if (alvo) {
+          alvo.dado = meioTermo(alvo);
+          p.falas.push({ quem: 'empresa', txt: `Nossa contraproposta: ${descPedido(alvo.tipo, alvo.dado)}. Menos que isso não fecha a conta.` });
+        } else p.falas.push({ quem: 'empresa', txt: 'Precisamos de um gesto da prefeitura. Pense melhor.' });
       }
       return 'contra';
     }
@@ -400,8 +483,92 @@ const Empresas = (() => {
     p.falas.push({ quem: 'empresa', txt: 'Assim fica muito longe do que precisamos. Última chance, prefeito.' });
     return 'contra';
   }
+  // valor no meio do caminho entre o oferecido e o pedido (arredondado às opções da mesa)
+  function meioTermo(ped) {
+    const d = ped.dado || vazio(ped.tipo), q = ped.pedido;
+    const perto = (lista, v) => lista.reduce((a, b) => Math.abs(b - v) < Math.abs(a - v) ? b : a);
+    const acima = (lista, v) => lista.find(x => x >= v - 1e-9) ?? lista[lista.length - 1];
+    switch (ped.tipo) {
+      case 'isencaoIPTU': return { pct: acima(OPCOES_NEG.pct, ((d.pct || 0) + q.pct) / 2), anos: Math.max(1, Math.ceil(((d.anos || 0) + q.anos) / 2)) };
+      case 'reducaoISS': {
+        const iss = S().impostos.iss, atual = d.taxa && d.anos ? d.taxa : iss;
+        const taxas = OPCOES_NEG.taxasISS.filter(t => t < iss).sort((a, b) => b - a);
+        const meio = (atual + q.taxa) / 2;
+        return { taxa: taxas.find(t => t <= meio + 1e-9) ?? q.taxa, anos: Math.max(1, Math.ceil(((d.anos || 0) + q.anos) / 2)) };
+      }
+      case 'doacaoTerreno': return { pct: acima(OPCOES_NEG.terreno, ((d.pct || 0) + q.pct) / 2) };
+      case 'infra': { const f = acima(OPCOES_NEG.infra, ((d.valor || 0) / q.valor + 1) / 2); return { valor: Math.round(q.valor * f / 1e4) * 1e4 }; }
+      case 'isencaoITBI': return { pct: acima(OPCOES_NEG.itbi, ((d.pct || 0) + q.pct) / 2) };
+    }
+    return { ...q };
+  }
+  // "o que falta para fechar?": procura a menor melhora num item que já fecharia o acordo
+  function sondar(p) {
+    migrarProposta(p);
+    if (p.sondagens <= 0) return { txt: 'Já dissemos o que precisamos, prefeito. Agora é com o senhor.' };
+    p.sondagens--;
+    const av = avaliar(p);
+    if (av.margem >= 0) { const t = 'Do jeito que está, a gente fecha hoje.'; p.falas.push({ quem: 'empresa', txt: t }); return { txt: t }; }
+    const candidatos = [];
+    for (const ped of p.pedidos.filter(x => pedidoAplica(p, x))) {
+      for (const v of opcoesDe(p, ped)) {
+        if (ptsBruto(ped.tipo, v) <= ptsBruto(ped.tipo, ped.dado)) continue;
+        const ganho = ptsItem(ped, v) - ptsItem(ped);
+        if (ganho + av.margem >= 0) candidatos.push({ ped, v, custo: ptsBruto(ped.tipo, v) - ptsBruto(ped.tipo, ped.dado) });
+      }
+    }
+    candidatos.sort((a, b) => a.custo - b.custo);
+    let txt;
+    if (candidatos.length) {
+      const c0 = candidatos[0];
+      txt = `Se a prefeitura topar ${descPedido(c0.ped.tipo, c0.v)}, fechamos hoje.`;
+      p.falas.push({ quem: 'empresa', txt });
+      return { txt, sugestao: [{ tipo: c0.ped.tipo, v: c0.v }] };
+    }
+    // nenhum item sozinho resolve: junta os pedidos por ordem de prioridade
+    let falta = -av.margem; const mudas = [];
+    for (const ped of p.pedidos.filter(x => pedidoAplica(p, x) && !x.extra).sort((a, b) => b.peso - a.peso)) {
+      const ganho = ptsItem(ped, ped.pedido) - ptsItem(ped);
+      if (ganho <= 0.01) continue;
+      mudas.push({ tipo: ped.tipo, v: { ...ped.pedido } }); falta -= ganho;
+      if (falta <= 0) break;
+    }
+    if (falta <= 0) {
+      txt = `Precisamos de ${mudas.map(m => descPedido(m.tipo, m.v)).join(' e ')}. Com isso, fechamos.`;
+      p.falas.push({ quem: 'empresa', txt });
+      return { txt, sugestao: mudas };
+    }
+    const cara = p.exigidas.slice().sort((a, b) => CONTRAPARTIDAS[b].custo - CONTRAPARTIDAS[a].custo)[0];
+    txt = cara ? `Mesmo com tudo o que pedimos, as contrapartidas ficam pesadas demais. Teria que sair "${CONTRAPARTIDAS[cara].nome.toLowerCase()}".`
+      : 'Mesmo com tudo o que pedimos, a conta ainda não fecha. Precisaríamos de algo a mais da prefeitura.';
+    p.falas.push({ quem: 'empresa', txt });
+    return { txt };
+  }
+  // valores possíveis de cada item na mesa
+  function opcoesDe(p, ped) {
+    const out = [], q = ped.pedido, anosMax = Math.max(OPCOES_NEG.anosMax, q.anos || 0);
+    switch (ped.tipo) {
+      case 'isencaoIPTU': for (const pct of OPCOES_NEG.pct) for (let a = 1; a <= anosMax; a++) out.push({ pct, anos: a }); break;
+      case 'reducaoISS': for (const taxa of OPCOES_NEG.taxasISS.filter(t => t < S().impostos.iss)) for (let a = 1; a <= anosMax; a++) out.push({ taxa, anos: a }); break;
+      case 'doacaoTerreno': OPCOES_NEG.terreno.forEach(pct => out.push({ pct })); break;
+      case 'infra': if (q.valor) OPCOES_NEG.infra.forEach(f => out.push({ valor: Math.round(q.valor * f / 1e4) * 1e4 })); else [0, 250e3, 500e3, 1e6, 2e6].forEach(v => out.push({ valor: v })); break;
+      case 'isencaoITBI': OPCOES_NEG.itbi.forEach(pct => out.push({ pct })); break;
+    }
+    return out;
+  }
+  // a prefeitura oferece algo que a empresa não pediu (vale menos, mas ajuda)
+  function oferecerExtra(p, tipo) {
+    migrarProposta(p);
+    if (p.pedidos.some(x => x.tipo === tipo)) return;
+    const taxaExtra = Math.max(2, ...OPCOES_NEG.taxasISS.filter(t => t < S().impostos.iss));
+    const base = { isencaoIPTU: { pct: 0.5, anos: 2 }, reducaoISS: { taxa: taxaExtra, anos: 2 }, infra: { valor: 300e3 }, isencaoITBI: { pct: 1 }, doacaoTerreno: { pct: 0.5 } }[tipo];
+    const ped = { tipo, pedido: vazio(tipo), dado: base, peso: 0.5, extra: true };
+    if (tipo === 'infra') ped.pedido = { valor: 0 };
+    p.pedidos.push(ped);
+  }
+  function removerExtra(p, tipo) { p.pedidos = p.pedidos.filter(x => !(x.extra && x.tipo === tipo)); }
   function resumoProposta(p) {
-    const dados = p.pedidos.filter(x => pedidoAplica(p, x)).map(x => x.dado ? descPedido(x.tipo, x.dado) : 'sem ' + PEDIDOS_EMPRESA[x.tipo].nome.toLowerCase());
+    const dados = p.pedidos.filter(x => pedidoAplica(p, x)).map(x => descPedido(x.tipo, x.dado));
     const ex = p.exigidas.map(id => CONTRAPARTIDAS[id].nome.toLowerCase());
     return `Oferecemos: ${dados.join(', ') || 'nada além do terreno'}.` + (ex.length ? ` Em troca, exigimos: ${ex.join('; ')}.` : '');
   }
@@ -438,11 +605,8 @@ const Empresas = (() => {
       id: 'e' + (uid++), catId: c.id, nome: c.nome, setor: c.setor, empregos: c.empregos, cor: c.cor, sprite: c.sprite,
       loteId: l ? l.id : null, bairro: l ? l.bairro : (p.bairro || 'rural'), pequeno: c.local === 'pequeno', status: im.precisaCamara ? 'camara' : 'instalacao',
       mesesRest: c.meses, mesesTotal: c.meses, inicio: null, satisfacao: 70, seriedade: c.seriedade,
-      incentivos: {
-        iptuAnos: valorDado(p, 'isencaoIPTU'), issAnos: valorDado(p, 'reducaoISS'),
-        doacao: !!valorDado(p, 'doacaoTerreno'), itbi: !!valorDado(p, 'isencaoITBI'), infra: valorDado(p, 'infra') || 0,
-      },
-      incentivoPts: p.pedidos.filter(x => PEDIDOS_EMPRESA[x.tipo].fiscal && pedidoAplica(p, x)).reduce((sum, x) => sum + ptsPedido(x, x.dado), 0),
+      incentivos: incentivosDe(p),
+      incentivoPts: p.pedidos.filter(x => PEDIDOS_EMPRESA[x.tipo].fiscal && pedidoAplica(p, x)).reduce((sum, x) => sum + ptsBruto(x.tipo, x.dado), 0),
       vendaLote: im.vendaLote,
       contrapartidas: p.exigidas.map(id => ({ id, status: 'pendente', prazo: null, chance: c.seriedade })),
       sessao: im.precisaCamara ? Sim.proximaSessao() : null,
@@ -457,6 +621,16 @@ const Empresas = (() => {
     Sim.emit('acordo', e);
     Sim.emit('mudou');
     return e;
+  }
+  function incentivosDe(p) {
+    const ip = dadoDe(p, 'isencaoIPTU') || {}, is = dadoDe(p, 'reducaoISS') || {}, ter = dadoDe(p, 'doacaoTerreno') || {}, it = dadoDe(p, 'isencaoITBI') || {}, inf = dadoDe(p, 'infra') || {};
+    const temIptu = (ip.pct || 0) > 0 && (ip.anos || 0) > 0, temIss = ptsBruto('reducaoISS', is) > 0;
+    return {
+      iptuPct: temIptu ? ip.pct : 0, iptuAnos: temIptu ? ip.anos : 0,
+      issTaxa: temIss ? is.taxa : null, issAnos: temIss ? is.anos : 0,
+      terrenoDesc: ter.pct || 0, doacao: (ter.pct || 0) >= 1,
+      itbiPct: it.pct || 0, itbi: (it.pct || 0) > 0, infra: inf.valor || 0,
+    };
   }
   function iniciarInstalacao(e) {
     const s = S();
@@ -501,7 +675,7 @@ const Empresas = (() => {
   // quantos vereadores devem votar a favor (sem o fator sorte)
   function preverCamara(p) {
     const c = cat(p.catId), l = loteDe(p);
-    const pts = p.pedidos.filter(x => PEDIDOS_EMPRESA[x.tipo].fiscal && pedidoAplica(p, x)).reduce((sum, x) => sum + ptsPedido(x, x.dado), 0);
+    const pts = p.pedidos.filter(x => PEDIDOS_EMPRESA[x.tipo].fiscal && pedidoAplica(p, x)).reduce((sum, x) => sum + ptsBruto(x.tipo, x.dado), 0);
     return S().vereadores.filter(v => notaVereador(v, c.empregos, pts, c.poluicao, l ? l.bairro : (p.bairro || 'rural')) >= 50).length;
   }
   function liberarLote(e) {
@@ -532,7 +706,7 @@ const Empresas = (() => {
       } else if (e.status === 'operando') {
         // fim dos incentivos
         const idade = s.mesIndex - e.inicio;
-        if (e.incentivos.iptuAnos && idade === e.incentivos.iptuAnos * 12) { Sim.noticia(3, `Acaba a isenção de IPTU de ${e.nome}`, 'Empresa passa a pagar imposto normalmente'); e.satisfacao -= 8; }
+        if (e.incentivos.iptuAnos && idade === e.incentivos.iptuAnos * 12) { Sim.noticia(3, `Acaba o desconto de IPTU de ${e.nome}`, 'Empresa passa a pagar imposto normalmente'); e.satisfacao -= 8; }
         if (e.incentivos.issAnos && idade === e.incentivos.issAnos * 12) { Sim.noticia(3, `Termina o ISS reduzido de ${e.nome}`, ''); e.satisfacao -= 8; }
         // fiscalização das contrapartidas
         for (const cp of e.contrapartidas) {
@@ -618,8 +792,11 @@ const Empresas = (() => {
   function bairroEfeito(e) { return e.bairro === 'rural' ? 'operaria' : e.bairro; }
   function isento(e, tipo) {
     const anos = tipo === 'iptu' ? e.incentivos.iptuAnos : e.incentivos.issAnos;
-    return anos && (S().mesIndex - e.inicio) < anos * 12;
+    return !!anos && (S().mesIndex - e.inicio) < anos * 12;
   }
+  // fator do IPTU que a empresa paga (1 = cheio) e alíquota de ISS em vigor
+  function fatorIPTU(e) { return isento(e, 'iptu') ? 1 - (e.incentivos.iptuPct == null ? 1 : e.incentivos.iptuPct) : 1; }
+  function aliquotaISS(e) { const n = S().impostos.iss; return isento(e, 'iss') ? Math.min(n, e.incentivos.issTaxa || 2) : n; }
 
   function receitaMensal() {
     const s = S(); let iss = 0, icms = 0, iptu = 0;
@@ -627,9 +804,9 @@ const Empresas = (() => {
       const c = cat(e.catId);
       if (e.status === 'instalacao') iss += c.invest * 0.3 / c.meses * s.impostos.iss / 100; // ISS da construção
       if (e.status !== 'operando') continue;
-      iss += c.iss * (isento(e, 'iss') ? 0.02 : s.impostos.iss / 100);
+      iss += c.iss * aliquotaISS(e) / 100;
       icms += c.icms;
-      if (!isento(e, 'iptu')) iptu += c.venal * taxaIPTU(c, e.bairro === 'rural' ? null : e.bairro) / 100 / 12;
+      iptu += c.venal * taxaIPTU(c, e.bairro === 'rural' ? null : e.bairro) / 100 / 12 * fatorIPTU(e);
     }
     return { iss, icms, iptu };
   }
@@ -707,7 +884,7 @@ const Empresas = (() => {
 
   return {
     cat, garantirEstado, disponiveis, futuras, lotesCompativeis, gerarProposta, avaliar, proporRodada, recusar, desistir,
-    pedidoAplica, ptsPedido, descPedido, preverCamara, valorDado, loteDe, multCusto, votarPauta, mes, decidirCobranca,
+    pedidoAplica, ptsPedido, ptsBruto, descPedido, preverCamara, valorDado, loteDe, atendido, opcoesDe, sondar, oferecerExtra, removerExtra, migrarProposta, fatorIPTU, aliquotaISS, taxaIPTU, PRIORIDADES, multCusto, votarPauta, mes, decidirCobranca,
     dia, prospectar, podeProspectar, CUSTO_PROSPECCAO, opiniao, escolherBairroPequeno,
     receitaMensal, reducaoDesemprego, poluicaoBairro, efeitos, coberturaExtra, turismoTotal, migracao, ativas, isento,
   };

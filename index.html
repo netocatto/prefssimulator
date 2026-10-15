@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Prefeito</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@700&display=swap">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="jogo"></div>
+<div id="luz" aria-hidden="true"></div>
+<div id="sono" aria-hidden="true"></div>
+
+<div id="hud" hidden>
+  <!-- placa da cidade (canto superior esquerdo) -->
+  <div class="placa moldura">
+    <div class="placa-nome"><span id="h-cidade"></span><small id="h-mandato"></small></div>
+    <div class="placa-aprov" id="h-aprov"></div>
+    <div class="placa-linha">
+      <span id="h-pop"></span>
+      <span id="h-desemp"></span>
+      <span id="h-eleicao"></span>
+    </div>
+  </div>
+
+  <!-- relógio, velocidade e caixa (canto superior direito) -->
+  <div class="relogio moldura">
+    <div class="rel-data"><span id="h-data"></span>
+      <div class="rel-hora"><span id="h-hora"></span><div class="dia"><i id="h-diaBar"></i></div><button class="btn" id="dormir" title="Dormir: encerra o dia e acorda às 6h do dia seguinte (Z)">☾ Dormir</button></div></div>
+    <div class="rel-vel tempo">
+      <button data-vel="0" title="Pausar (espaço)" aria-label="Pausar">❚❚</button>
+      <button data-vel="1" title="Velocidade normal" aria-label="Velocidade normal">▶</button>
+      <button data-vel="2" title="2x mais rápido" aria-label="2x">▶▶</button>
+      <button data-vel="5" title="5x mais rápido" aria-label="5x">▶▶▶</button>
+      <button id="pular" title="Fecha o mês atual e vai para o próximo">Próximo mês</button>
+    </div>
+    <div class="rel-caixa" id="h-caixa"></div>
+    <div class="rel-som">
+      <button id="ir-menu" title="Salvar e voltar ao menu de jogos salvos" aria-label="Menu">☰ Menu</button>
+      <button id="som-musica" class="som" title="Música de fundo (M)" aria-label="Música de fundo">♫</button>
+      <button id="som-sfx" class="som" title="Efeitos sonoros (N)" aria-label="Efeitos sonoros">♪ efeitos</button>
+    </div>
+  </div>
+
+  <!-- barra de ícones (embaixo, como a barra de ferramentas) -->
+  <nav class="menu barra-icones moldura" aria-label="Gabinete">
+    <button data-p="financas" data-ico="financas" data-tecla="1" aria-label="Finanças"><span class="rotulo">Finanças</span></button>
+    <button data-p="impostos" data-ico="impostos" data-tecla="2" aria-label="Impostos"><span class="rotulo">Impostos</span></button>
+    <button data-p="empresas" data-ico="empresas" data-tecla="3" id="m-empresas" aria-label="Empresas"><span class="rotulo">Empresas</span></button>
+    <button data-p="camara" data-ico="camara" data-tecla="4" id="m-camara" aria-label="Câmara"><span class="rotulo">Câmara</span></button>
+    <button data-p="promessas" data-ico="promessas" data-tecla="5" aria-label="Promessas e eleição"><span class="rotulo">Promessas</span></button>
+    <button data-p="populacao" data-ico="populacao" data-tecla="6" aria-label="População"><span class="rotulo">População</span></button>
+    <button data-p="regiao" data-ico="regiao" data-tecla="7" aria-label="Região"><span class="rotulo">Região</span></button>
+    <button data-p="ouvidoria" data-ico="ouvidoria" data-tecla="8" id="m-ouvidoria" aria-label="Ouvidoria"><span class="rotulo">Ouvidoria</span></button>
+    <button data-p="jornal" data-ico="jornal" data-tecla="9" aria-label="Jornal"><span class="rotulo">Jornal</span></button>
+    <button data-p="licitacoes" data-ico="licitacoes" data-tecla="0" id="m-licitacoes" aria-label="Licitações"><span class="rotulo">Licitações</span></button>
+    <button data-p="recursos" data-ico="recursos" data-tecla="R" id="m-recursos" aria-label="Recursos federais e estaduais"><span class="rotulo">Recursos</span></button>
+  </nav>
+
+  <aside id="painel" class="moldura" hidden>
+    <header><h2 id="painel-titulo"></h2><button class="btn fechar" id="fechar-painel" aria-label="Fechar painel">✕</button></header>
+    <div id="painel-corpo"></div>
+  </aside>
+
+  <div id="toasts" aria-live="polite"></div>
+</div>
+
+<div id="modal" hidden><div id="modal-corpo" class="moldura" role="dialog" aria-modal="true"></div></div>
+<div id="inicio" hidden></div>
+
+<script src="lib/phaser.min.js"></script>
+<script src="js/data.js"></script>
+<script src="js/sim.js"></script>
+<script src="js/empresas.js"></script>
+<script src="js/licitacoes.js"></script>
+<script src="js/recursos.js"></script>
+<script src="js/som.js"></script>
+<script src="js/art.js"></script>
+<script src="js/map.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
